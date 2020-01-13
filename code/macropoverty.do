@@ -33,12 +33,5 @@ cap mkdir "${dir}/code"
 global data = "${dir}/data"
 global code = "${dir}/code"
 
-cap copy usa_00001.dta ${dir}/data/acs_extract.dta, replace
-copy macropoverty.do ${dir}/code/macropoverty.do, replace
-
-*erase macropoverty.do
-*erase usa_00001.dta
-
-cd ${dir}
-
-use ${data}/acs_extract.dta
+cd ${data}
+use acs_extract.dta
