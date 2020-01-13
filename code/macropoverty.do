@@ -11,21 +11,29 @@
 Outline:
 	
 	1. Preamble
-	
 	2. File Preparation
-		2.1 load ACS dataset
-		2.2 Exploratory analysis
+	3. Analysis
+		3.1 Exploratory analysis
+		3.2 Generate revised income
 			
 *******************************************************************************/
 
+********************
 *1. Preamble
+********************
+
 clear all
 cap log close
 set more off
 
-*cap ssc install gtools
+*use once
+ssc install gtools
+ssc install egenmore
 
-*2 Create directories for data and code
+
+********************
+*2. Create directories for data and code, load ACS data set
+********************
 
 cap mkdir macropoverty
 global dir = "/projects/dperez/macropoverty"
@@ -36,17 +44,33 @@ cap mkdir "${dir}/code"
 global data = "${dir}/data"
 global code = "${dir}/code"
 
-********************
-*2.1 load ACS dataset
-********************
-
 cd ${data}
 use acs_extract.dta
 
+********************
+*3.1 Exploratory analysis
+********************
 
-********************
-*2.2 Exploratory analysis
-********************
+*9999999=NA so replace all values with .
+
+replace hhincome =. if hhincome == 9999999
+replace ftotinc =. if ftotinc == 9999999
 
 gstats sum hhincome, d
 gstats sum ftotinc, d
+
+********************
+*3.2 Generate revised income and rank by quintiles
+********************
+
+gen sfaminc = (ftotinc / sqrt(famsize))
+gen shhinc = (hhincome / sqrt(famsize))
+
+gegen sfaminc5 = xtile(sfaminc), nq(5)
+gegen shhinc5 = xtile(shhinc), nq(5)
+
+hashsort year hhincome ftotinc sfaminc5 shhinc5
+
+tab shhinc5
+tab sfaminc5
+*gquantiles shhinc5 = shhinc, xtile nq(5)
