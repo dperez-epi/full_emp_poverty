@@ -1,22 +1,22 @@
-*Daniel Perez
-*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-*	Title: 		povwages.do
-*	Date: 		01/10/2020
-*	Created by: 	Daniel Perez
-*	Purpose:	Use ACS data to construct income quintiles for US 
-*			households
-*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	Author:		Daniel Perez
+	Title: 		povwages.do
+	Date: 		01/10/2020
+	Created by: 	Daniel Perez
+	Purpose:	Use ACS data to construct income quintiles for US 
+			households
 
-/*******************************************************************************
-Outline:
+	Outline:
 	
 	1. Preamble
 	2. File Preparation
 	3. Analysis
 		3.1 Exploratory analysis
 		3.2 Generate revised income
+		3.3 Descriptive statistics
 			
-*******************************************************************************/
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
+
 
 ****************************************
 *1. Preamble
@@ -27,8 +27,8 @@ cap log close
 set more off
 
 *use once
-ssc install gtools
-ssc install egenmore
+//ssc install gtools
+//ssc install egenmore
 
 
 ****************************************
@@ -53,10 +53,8 @@ use acs_extract.dta
 
 *9999999=NA so replace all values with .
 
-replace hhincome =. if hhincome == 9999999
 replace ftotinc =. if ftotinc == 9999999
 
-gstats sum hhincome, d
 gstats sum ftotinc, d
 
 ****************************************
@@ -64,20 +62,22 @@ gstats sum ftotinc, d
 ****************************************
 
 gen sfaminc = (ftotinc / sqrt(famsize))
-gen shhinc = (hhincome / sqrt(famsize))
 
 gegen sfaminc5 = xtile(sfaminc), nq(5)
-gegen shhinc5 = xtile(shhinc), nq(5)
 
 *sort on these variables
-hashsort year hhincome ftotinc sfaminc5 shhinc5
+hashsort year ftotinc sfaminc5
 
-tab shhinc5
 tab sfaminc5
 
 ****************************************
 *3.3 Descriptive stats
 ****************************************
 
-*sum scaled family income for the bottom 20% of families
+*summarize the scaled family income for the bottom 20% of families
 bysort year: sum sfaminc if sfaminc5 == 1
+
+*summarize for all years combined
+sum sfaminc if sfaminc5==1, d
+
+
