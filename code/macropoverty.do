@@ -39,6 +39,6 @@ copy macropoverty.do ${dir}/code/macropoverty.do, replace
 *erase macropoverty.do
 *erase usa_00001.dta
 
-cd ${dir}
+cd ${data}
 
-use ${data}/acs_extract.dta
+use acs_extract.dta
