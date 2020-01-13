@@ -18,9 +18,9 @@ Outline:
 			
 *******************************************************************************/
 
-********************
+****************************************
 *1. Preamble
-********************
+****************************************
 
 clear all
 cap log close
@@ -31,9 +31,9 @@ ssc install gtools
 ssc install egenmore
 
 
-********************
+****************************************
 *2. Create directories for data and code, load ACS data set
-********************
+****************************************
 
 cap mkdir macropoverty
 global dir = "/projects/dperez/macropoverty"
@@ -47,9 +47,9 @@ global code = "${dir}/code"
 cd ${data}
 use acs_extract.dta
 
-********************
+****************************************
 *3.1 Exploratory analysis
-********************
+****************************************
 
 *9999999=NA so replace all values with .
 
@@ -59,9 +59,9 @@ replace ftotinc =. if ftotinc == 9999999
 gstats sum hhincome, d
 gstats sum ftotinc, d
 
-********************
+****************************************
 *3.2 Generate revised income and rank by quintiles
-********************
+****************************************
 
 gen sfaminc = (ftotinc / sqrt(famsize))
 gen shhinc = (hhincome / sqrt(famsize))
@@ -69,14 +69,15 @@ gen shhinc = (hhincome / sqrt(famsize))
 gegen sfaminc5 = xtile(sfaminc), nq(5)
 gegen shhinc5 = xtile(shhinc), nq(5)
 
+*sort on these variables
 hashsort year hhincome ftotinc sfaminc5 shhinc5
 
 tab shhinc5
 tab sfaminc5
-*gquantiles shhinc5 = shhinc, xtile nq(5)
 
-********************
+****************************************
 *3.3 Descriptive stats
-********************
+****************************************
 
-bysort year shhinc5: sum hhincome
+*sum scaled family income for the bottom 20% of families
+bysort year: sum sfaminc if sfaminc5 == 1
