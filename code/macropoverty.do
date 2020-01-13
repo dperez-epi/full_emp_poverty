@@ -74,3 +74,9 @@ hashsort year hhincome ftotinc sfaminc5 shhinc5
 tab shhinc5
 tab sfaminc5
 *gquantiles shhinc5 = shhinc, xtile nq(5)
+
+********************
+*3.3 Descriptive stats
+********************
+
+bysort year shhinc5: sum hhincome
