@@ -14,6 +14,7 @@ Outline:
 	
 	2. File Preparation
 		2.1 load ACS dataset
+		2.2 Exploratory analysis
 			
 *******************************************************************************/
 
@@ -21,6 +22,8 @@ Outline:
 clear all
 cap log close
 set more off
+
+*cap ssc install gtools
 
 *2 Create directories for data and code
 
@@ -33,5 +36,17 @@ cap mkdir "${dir}/code"
 global data = "${dir}/data"
 global code = "${dir}/code"
 
+********************
+*2.1 load ACS dataset
+********************
+
 cd ${data}
 use acs_extract.dta
+
+
+********************
+*2.2 Exploratory analysis
+********************
+
+gstats sum hhincome, d
+gstats sum ftotinc, d
