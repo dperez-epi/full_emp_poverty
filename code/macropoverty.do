@@ -63,10 +63,11 @@ gstats sum ftotinc, d
 
 gen sfaminc = (ftotinc / sqrt(famsize))
 
+*split into quintiles 
 gegen sfaminc5 = xtile(sfaminc), nq(5)
 
 *sort on these variables
-hashsort year ftotinc sfaminc5
+hashsort year sfaminc ftotinc 
 
 tab sfaminc5
 
@@ -80,4 +81,10 @@ bysort year: sum sfaminc if sfaminc5 == 1
 *summarize for all years combined
 sum sfaminc if sfaminc5==1, d
 
+****************************************
+*3.4 Total hours worked by family
+****************************************
+
+
+uhrswork is hours worked
 
