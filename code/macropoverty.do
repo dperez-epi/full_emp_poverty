@@ -35,11 +35,7 @@ set more off
 *2. Create directories for data and code, load ACS data set
 ****************************************
 
-cap mkdir macropoverty
 global dir = "/projects/dperez/macropoverty"
-
-cap mkdir "${dir}/data"
-cap mkdir "${dir}/code"
 
 global data = "${dir}/data"
 global code = "${dir}/code"
@@ -63,7 +59,6 @@ gstats sum ftotinc, d
 
 gen sfaminc = (ftotinc / sqrt(famsize))
 
-*split into quintiles 
 gegen sfaminc5 = xtile(sfaminc), nq(5)
 
 *sort on these variables
@@ -85,6 +80,6 @@ sum sfaminc if sfaminc5==1, d
 *3.4 Total hours worked by family
 ****************************************
 
+*uhrswork is hours worked
 
-uhrswork is hours worked
-
+bysort famunit:	gegen famhours = sum(uhrswork)
