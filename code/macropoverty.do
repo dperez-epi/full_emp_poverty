@@ -82,4 +82,7 @@ sum tfaminc if tfaminc5==1, d
 
 *uhrswork is hours worked
 
-bysort famunit:	gegen famhours = sum(uhrswork)
+gegen famhours = total(uhrswork), by(famsize)
+
+mvdecode incwage, mv(999999)
+
