@@ -57,24 +57,24 @@ gstats sum ftotinc, d
 *3.2 Generate revised income and rank by quintiles
 ****************************************
 
-gen sfaminc = (ftotinc / sqrt(famsize))
+gen tfaminc = (ftotinc / sqrt(famsize))
 
-gegen sfaminc5 = xtile(sfaminc), nq(5)
+gegen tfaminc5 = xtile(tfaminc), nq(5)
 
 *sort on these variables
-hashsort year sfaminc ftotinc 
+hashsort year tfaminc ftotinc 
 
-tab sfaminc5
+tab tfaminc5
 
 ****************************************
 *3.3 Descriptive stats
 ****************************************
 
-*summarize the scaled family income for the bottom 20% of families
-bysort year: sum sfaminc if sfaminc5 == 1
+*summarize the transformed family income for the bottom 20% of families
+bysort year: sum tfaminc if tfaminc5 == 1
 
 *summarize for all years combined
-sum sfaminc if sfaminc5==1, d
+sum tfaminc if tfaminc5==1, d
 
 ****************************************
 *3.4 Total hours worked by family
