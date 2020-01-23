@@ -80,9 +80,16 @@ sum tfaminc if tfaminc5==1, d
 *3.4 Total hours worked by family
 ****************************************
 
-*uhrswork is hours worked
+*uhrswork is usual hours worked per week.
+*will usual hours worked per week, summed by family, give us what we need?
 
-gegen famhours = total(uhrswork), by(famsize)
 
+/*
+UHRSWORK Specific Variable Codes
+00 = N/A
+99 = 99 hours (Top Code)
+*/
 mvdecode incwage, mv(999999)
+replace uhrswork = . if uhrswork == 0
 
+gegen famhours = total(uhrswork), by(famsize year serial)
