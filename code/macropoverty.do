@@ -49,8 +49,7 @@ use acs_extract.dta
 
 *9999999=NA so replace all values with .
 
-replace ftotinc =. if ftotinc == 9999999
-
+mvdecode ftotinc, mv(999999)
 gstats sum ftotinc, d
 
 ****************************************
@@ -92,4 +91,5 @@ UHRSWORK Specific Variable Codes
 mvdecode incwage, mv(999999)
 replace uhrswork = . if uhrswork == 0
 
-gegen famhours = total(uhrswork), by(famsize year serial)
+gegen famhours = total(uhrswork), by(famsize year)
+
