@@ -49,7 +49,7 @@ use acs_extract.dta
 
 *9999999=NA so replace all values with .
 
-mvdecode ftotinc, mv(999999)
+mvdecode ftotinc, mv(9999999)
 gstats sum ftotinc, d
 
 ****************************************
@@ -58,13 +58,12 @@ gstats sum ftotinc, d
 
 gen tfaminc = (ftotinc / sqrt(famsize))
 
-gegen tfaminc5 = xtile(tfaminc), nq(5)
+gegen tfaminc5 = xtile(tfaminc) [pw=perwt], nq(5)
 
 *sort on these variables
 hashsort year tfaminc ftotinc 
 
-tab tfaminc5
-
+ 
 ****************************************
 *3.3 Descriptive stats
 ****************************************
@@ -88,8 +87,31 @@ UHRSWORK Specific Variable Codes
 00 = N/A
 99 = 99 hours (Top Code)
 */
-mvdecode incwage, mv(999999)
-replace uhrswork = . if uhrswork == 0
 
-gegen famhours = total(uhrswork), by(famsize year)
+mvdecode incwage, mv(999999)
+
+replace uhrswork = . if uhrswork==0
+gegen famhours = total(uhrswork), by(year serial famsize)
+
+****************************************
+*3.5 Total weeks worked per year by family
+****************************************
+
+replace wkswork1 = . if wkswork1==0
+gegen wksperyear = total(wkswork1), by(year serial famsize)
+
+replace wksperyear = . if wksperyear ==0
+****************************************
+*3.6 Total weeks worked per year by family
+****************************************
+
+gen annual_famhours = famhours*wksperyear
+
+replace annual_famhours = . if annual_famhours == 0
+/*
+WKSWORK1 Specific Variable Codes
+00 = N/A
+*/
+browse year sample serial famsize pernum ftotinc tfaminc uhrswork famhours ///
+	wksperyear annual_famhours 
 
