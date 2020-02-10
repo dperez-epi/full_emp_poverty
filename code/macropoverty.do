@@ -11,9 +11,9 @@
 	1. Preamble
 	2. File Preparation
 	3. Analysis
-		3.1 Exploratory analysis
-		3.2 Generate revised income
-		3.3 Descriptive statistics
+		3.0 Generate income and rank by quintiles
+		3.1 Calculate annual hours worked by family
+		3.2 Descriptive stats
 			
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
@@ -25,6 +25,7 @@
 clear all
 cap log close
 set more off
+log 
 
 *use once
 //ssc install gtools
@@ -103,7 +104,7 @@ gegen annual_famhours = total(annpersonhrs), by(year serial famsize)
 label var annual_famhours "Annual hours worked by family"
 
 ****************************************
-*3.3 Descriptive stats
+*3.2 Descriptive stats
 ****************************************
 
 hashsort sample year serial pernum
@@ -121,6 +122,22 @@ bysort year: sum tfaminc if tfaminc5==1
 
 *How have hours worked by bottom 20% changed over time?
 
-*lets collapse our data to get tranformed income by year,
-*merge this back onto our dataset, and then plot our data
+*lets collapse our data to get tranformed income, and hours worked, by year
 
+preserve
+keep if tfaminc5 == 1
+gcollapse (mean) meanwages = tfaminc [pw=perwt], by(year)
+list year meanwages
+export excel "
+restore
+
+preserve
+keep if tfaminc5 == 1
+gcollapse (mean) meanhours = annual_famhours [pw=perwt], by(year)
+list year meanhours
+restore
+
+/*Future analysis might also include mean wages and hours worked
+by quintile, by age by race, and more. */
+
+log close macropoverty.txt
