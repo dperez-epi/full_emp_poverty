@@ -60,27 +60,22 @@ gen tfaminc = (ftotinc / sqrt(famsize))
 
 gegen tfaminc5 = xtile(tfaminc) [pw=perwt], nq(5)
 
-*sort on these variables
-hashsort year tfaminc ftotinc 
-
- 
 ****************************************
 *3.3 Descriptive stats
 ****************************************
 
 *summarize the transformed family income for the bottom 20% of families
-bysort year: sum tfaminc if tfaminc5 == 1
+bysort tfaminc5: sum tfaminc
 
 *summarize for all years combined
 sum tfaminc if tfaminc5==1, d
 
 ****************************************
-*3.4 Total hours worked by family
+*3.4 Total weekly hours worked by family
 ****************************************
 
 *uhrswork is usual hours worked per week.
 *will usual hours worked per week, summed by family, give us what we need?
-
 
 /*
 UHRSWORK Specific Variable Codes
@@ -90,28 +85,47 @@ UHRSWORK Specific Variable Codes
 
 mvdecode incwage, mv(999999)
 
-replace uhrswork = . if uhrswork==0
 gegen famhours = total(uhrswork), by(year serial famsize)
+
 
 ****************************************
 *3.5 Total weeks worked per year by family
 ****************************************
 
-replace wkswork1 = . if wkswork1==0
-gegen wksperyear = total(wkswork1), by(year serial famsize)
+/***********************************
+We take the mid-point of each interval
+*
+*      weeks |
+*worked last |
+*      year, |
+*intervalled |      Freq.     Percent        Cum.
+*------------+-----------------------------------
+*        n/a | 23,071,707       47.90       47.90
+*1-13 weeks |  1,883,648        3.91       51.82
+*14-26 weeks |  1,423,530        2.96       54.77
+*27-39 weeks |  1,583,948        3.29       58.06
+*40-47 weeks |  1,658,749        3.44       61.50
+*48-49 weeks |    756,096        1.57       63.07
+*50-52 weeks | 17,784,439       36.93      100.00
+*------------+-----------------------------------
+*      Total | 48,162,117      100.00
+***********************************/
 
-replace wksperyear = . if wksperyear ==0
+gen avgwkswork = wkswork2
+recode avgwkswork (0=0) (1= 7) (2 = 20) (3 = 33) (4 = 43.5) (5=48.5) (6=51)
+
 ****************************************
-*3.6 Total weeks worked per year by family
+*3.6 Total hours worked per year by family
 ****************************************
 
-gen annual_famhours = famhours*wksperyear
+gen hrswrk_year = uhrswork * avgwkswork 
 
-replace annual_famhours = . if annual_famhours == 0
-/*
-WKSWORK1 Specific Variable Codes
-00 = N/A
-*/
-browse year sample serial famsize pernum ftotinc tfaminc uhrswork famhours ///
-	wksperyear annual_famhours 
+gegen annual_famhours = total(hrswrk_year), by(year serial famsize)
 
+hashsort sample year serial pernum
+list year serial famsize pernum tfaminc uhrswork famhours avgwkswork hrswrk_year annual_famhours in 1/20, table
+
+bysort tfaminc5: sum tfaminc
+bysort tfaminc5: sum annual_famhours
+bysort year: sum annual_famhours if tfaminc5==1
+bysort year: sum tfaminc if tfaminc5==1
