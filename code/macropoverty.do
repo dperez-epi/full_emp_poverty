@@ -43,53 +43,32 @@ global code = "${dir}/code"
 cd ${data}
 use acs_extract.dta
 
-****************************************
-*3.1 Exploratory analysis
-****************************************
-
-*9999999=NA so replace all values with .
-
-mvdecode ftotinc, mv(9999999)
-gstats sum ftotinc, d
 
 ****************************************
-*3.2 Generate revised income and rank by quintiles
+*3.0 Generate income and rank by quintiles
 ****************************************
 
+*transformed family income
 gen tfaminc = (ftotinc / sqrt(famsize))
-
+label var tfaminc "Transformed family income
+"
+*create quintiles based off transformed family income (tfaminc)
 gegen tfaminc5 = xtile(tfaminc) [pw=perwt], nq(5)
 
-****************************************
-*3.3 Descriptive stats
-****************************************
-
-*summarize the transformed family income for the bottom 20% of families
-bysort tfaminc5: sum tfaminc
-
-*summarize for all years combined
-sum tfaminc if tfaminc5==1, d
-
-****************************************
-*3.4 Total weekly hours worked by family
-****************************************
-
-*uhrswork is usual hours worked per week.
-*will usual hours worked per week, summed by family, give us what we need?
-
-/*
-UHRSWORK Specific Variable Codes
-00 = N/A
-99 = 99 hours (Top Code)
-*/
-
-mvdecode incwage, mv(999999)
-
-gegen famhours = total(uhrswork), by(year serial famsize)
-
+label var tfaminc5 "Transformed family income quintiles"
+#delimit ;
+label def tfaminc5
+1 "First quintile 0–20%"
+2 "Second quintile 20–40%"
+3 "Third quintile 40–60%"
+4 "Fourth quintile 60–80%"
+5 "Fifth quintile 80–100%"
+;
+#delimit cr;
+lab val tfaminc5 tfaminc5
 
 ****************************************
-*3.5 Total weeks worked per year by family
+*3.1 Calculate annual hours worked by family
 ****************************************
 
 /***********************************
@@ -101,7 +80,7 @@ We take the mid-point of each interval
 *intervalled |      Freq.     Percent        Cum.
 *------------+-----------------------------------
 *        n/a | 23,071,707       47.90       47.90
-*1-13 weeks |  1,883,648        3.91       51.82
+*1-13  weeks |  1,883,648        3.91       51.82
 *14-26 weeks |  1,423,530        2.96       54.77
 *27-39 weeks |  1,583,948        3.29       58.06
 *40-47 weeks |  1,658,749        3.44       61.50
@@ -111,22 +90,34 @@ We take the mid-point of each interval
 *      Total | 48,162,117      100.00
 ***********************************/
 
+*average hours worked per week, by individual
 gen avgwkswork = wkswork2
 recode avgwkswork (0=0) (1= 7) (2 = 20) (3 = 33) (4 = 43.5) (5=48.5) (6=51)
 
-****************************************
-*3.6 Total hours worked per year by family
-****************************************
+*annual hours worked per person
+gen anpersnhrs = uhrswork * avgwkswork 
+label var anpersnhrs "Usual hours worked annually, by individual"
 
-gen hrswrk_year = uhrswork * avgwkswork 
-
+*annual hours worked by family
 gegen annual_famhours = total(hrswrk_year), by(year serial famsize)
+label var anpersnhrs "Annual hours worked by family"
+
+****************************************
+*3.3 Descriptive stats
+****************************************
 
 hashsort sample year serial pernum
 list year serial famsize pernum tfaminc uhrswork famhours avgwkswork hrswrk_year annual_famhours in 1/20, table
 
+*Transformed family income by quintile
 bysort tfaminc5: sum tfaminc
+*Annual hours worked by family, by quintile
 bysort tfaminc5: sum annual_famhours
+
+*Hours worked annually by bottom 20% of earner families, by year
 bysort year: sum annual_famhours if tfaminc5==1
+*Transformed income for bottom 20% of earning families, by year
 bysort year: sum tfaminc if tfaminc5==1
+
+*How have hours worked by bottom 20% changed over time?
 
