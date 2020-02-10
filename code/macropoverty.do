@@ -50,13 +50,13 @@ use acs_extract.dta
 
 *transformed family income
 gen tfaminc = (ftotinc / sqrt(famsize))
-label var tfaminc "Transformed family income
-"
+label var tfaminc "Transformed family income"
+
 *create quintiles based off transformed family income (tfaminc)
 gegen tfaminc5 = xtile(tfaminc) [pw=perwt], nq(5)
 
 label var tfaminc5 "Transformed family income quintiles"
-#delimit ;
+#delimit;
 label def tfaminc5
 1 "First quintile 0–20%"
 2 "Second quintile 20–40%"
@@ -64,7 +64,7 @@ label def tfaminc5
 4 "Fourth quintile 60–80%"
 5 "Fifth quintile 80–100%"
 ;
-#delimit cr;
+#delimit cr
 lab val tfaminc5 tfaminc5
 
 ****************************************
@@ -94,20 +94,20 @@ We take the mid-point of each interval
 gen avgwkswork = wkswork2
 recode avgwkswork (0=0) (1= 7) (2 = 20) (3 = 33) (4 = 43.5) (5=48.5) (6=51)
 
-*annual hours worked per person
-gen anpersnhrs = uhrswork * avgwkswork 
-label var anpersnhrs "Usual hours worked annually, by individual"
+*annual hours worked per person, which is usual hours worked * avg weeks worked
+gen annpersonhrs = uhrswork * avgwkswork 
+label var annpersonhrs "Usual hours worked annually, by individual"
 
 *annual hours worked by family
-gegen annual_famhours = total(hrswrk_year), by(year serial famsize)
-label var anpersnhrs "Annual hours worked by family"
+gegen annual_famhours = total(annpersonhrs), by(year serial famsize)
+label var annual_famhours "Annual hours worked by family"
 
 ****************************************
 *3.3 Descriptive stats
 ****************************************
 
 hashsort sample year serial pernum
-list year serial famsize pernum tfaminc uhrswork famhours avgwkswork hrswrk_year annual_famhours in 1/20, table
+list year serial famsize pernum tfaminc uhrswork avgwkswork annpersonhrs annual_famhours in 1/20, table
 
 *Transformed family income by quintile
 bysort tfaminc5: sum tfaminc
@@ -120,4 +120,7 @@ bysort year: sum annual_famhours if tfaminc5==1
 bysort year: sum tfaminc if tfaminc5==1
 
 *How have hours worked by bottom 20% changed over time?
+
+*lets collapse our data to get tranformed income by year,
+*merge this back onto our dataset, and then plot our data
 
