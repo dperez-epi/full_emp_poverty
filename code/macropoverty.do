@@ -129,3 +129,4 @@ bysort tfaminc5: sum tfaminc
 bysort tfaminc5: sum annual_famhours
 bysort year: sum annual_famhours if tfaminc5==1
 bysort year: sum tfaminc if tfaminc5==1
+
