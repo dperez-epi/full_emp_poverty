@@ -1,0 +1,195 @@
+
+. 
+. *Install useful packages one time before running code
+. //ssc install gtools
+. //ssc install egenmore
+. 
+. ****************************************
+. *2. Create directories for data and code, load ACS data set
+. ****************************************
+. 
+. global dir = "/projects/dperez/macropoverty"
+
+. 
+. global data = "${dir}/data"
+
+. global code = "${dir}/code"
+
+. 
+. cd ${data}
+/projects/dperez/macropoverty/data
+
+. 
+. * load CPI data
+. sysuse cpi_annual, clear 
+
+. keep year cpiurs 
+
+. tempfile cpi 
+
+. save `cpi' 
+file /tmp/St31707.000008 saved
+
+. 
+. *load ACS dataset
+. use acs_extract.dta, clear
+
+. 
+. merge m:1 year using `cpi', keep(3) nogenerate
+
+    Result                           # of obs.
+    -----------------------------------------
+    not matched                             0
+    matched                        48,162,117  
+    -----------------------------------------
+
+. ****************************************
+. *3.0 Generate income and rank by quintiles
+. ****************************************
+. 
+. *get rid of missing values
+. mvdecode ftotinc, mv(9999999)
+     ftotinc: 1677755 missing values generated
+
+. 
+. *adjust wages for 2018 values
+. sum year
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+        year | 48,162,117    2010.646    4.765216       2000       2018
+
+. local maxyear =`r(max)'
+
+. sum cpiurs if year ==`maxyear'
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+      cpiurs |  3,214,539       369.8           0      369.8      369.8
+
+. local basevalue =`r(mean)'
+
+. gen realftotinc = ftotinc * [`basevalue'/cpiurs]
+(1,677,755 missing values generated)
+
+. 
+. *transformed family income
+. 
+. gen tfaminc = (realftotinc / sqrt(famsize))
+(1,677,755 missing values generated)
+
+. label var tfaminc "Transformed family income"
+
+. 
+. stop
+command stop is unrecognized
+r(199);
+
+end of do-file
+
+r(199);
+
+. des
+
+Contains data from acs_extract.dta
+  obs:    48,162,117                          
+ vars:            71                          08 JAN 2020 14:39
+ size: 7,079,831,199                          
+--------------------------------------------------------------------------------------------------------------------------
+              storage   display    value
+variable name   type    format     label      variable label
+--------------------------------------------------------------------------------------------------------------------------
+year            int     %8.0g      YEAR       census year
+sample          long    %12.0g     SAMPLE     ipums sample identifier
+serial          long    %12.0g                household serial number
+cbserial        double  %12.0g                original census bureau household serial number
+hhwt            int     %8.0g                 household weight
+hhtype          byte    %8.0g      HHTYPE     household type
+cluster         double  %12.0g                household cluster for variance estimation
+region          byte    %8.0g      REGION     census region and division
+statefip        byte    %8.0g      STATEFIP   state (fips code)
+countyfip       int     %8.0g                 county (fips code)
+density         double  %12.0g                population-weighted density of puma
+metro           byte    %8.0g      METRO      metropolitan status
+metarea         int     %8.0g      METAREA    metropolitan area [general version]
+metaread        int     %8.0g      METAREAD   metropolitan area [detailed version]
+city            int     %8.0g      CITY       city
+citypop         long    %12.0g                city population
+puma            long    %12.0g                public use microdata area
+strata          long    %12.0g                household strata for variance estimation
+gq              byte    %8.0g      GQ         group quarters status
+hhincome        long    %12.0g                total household income
+foodstmp        byte    %8.0g      FOODSTMP   food stamp recipiency
+pernum          byte    %8.0g                 person number in sample unit
+perwt           int     %8.0g                 person weight
+famunit         byte    %8.0g      FAMUNIT    family unit membership
+famsize         byte    %8.0g      FAMSIZE    number of own family members in household
+subfam          byte    %8.0g      SUBFAM     subfamily membership
+sftype          byte    %8.0g      SFTYPE     subfamily type
+sfrelate        byte    %8.0g      SFRELATE   relationship within subfamily
+nchild          byte    %8.0g      NCHILD     number of own children in the household
+nchlt5          byte    %8.0g      NCHLT5     number of own children under age 5 in household
+eldch           byte    %8.0g      ELDCH      age of eldest own child in household
+yngch           byte    %8.0g      YNGCH      age of youngest own child in household
+relate          byte    %8.0g      RELATE     relationship to household head [general version]
+related         int     %8.0g      RELATED    relationship to household head [detailed version]
+sex             byte    %8.0g      SEX        sex
+age             byte    %8.0g      AGE        age
+marst           byte    %8.0g      MARST      marital status
+race            byte    %8.0g      RACE       race [general version]
+raced           int     %8.0g      RACED      race [detailed version]
+hispan          byte    %8.0g      HISPAN     hispanic origin [general version]
+hispand         int     %8.0g      HISPAND    hispanic origin [detailed version]
+citizen         byte    %8.0g      CITIZEN    citizenship status
+educ            byte    %8.0g      EDUC       educational attainment [general version]
+educd           int     %8.0g      EDUCD      educational attainment [detailed version]
+gradeatt        byte    %8.0g      GRADEATT   grade level attending [general version]
+gradeattd       byte    %8.0g      GRADEATTD
+                                              grade level attending [detailed version]
+empstat         byte    %8.0g      EMPSTAT    employment status [general version]
+empstatd        byte    %8.0g      EMPSTATD   employment status [detailed version]
+labforce        byte    %8.0g      LABFORCE   labor force status
+classwkr        byte    %8.0g      CLASSWKR   class of worker [general version]
+classwkrd       byte    %8.0g      CLASSWKRD
+                                              class of worker [detailed version]
+wkswork1        byte    %8.0g                 weeks worked last year
+wkswork2        byte    %8.0g      WKSWORK2   weeks worked last year, intervalled
+uhrswork        byte    %8.0g      UHRSWORK   usual hours worked per week
+inctot          long    %12.0g                total personal income
+ftotinc         long    %12.0g                total family income
+incwage         long    %12.0g                wage and salary income
+incearn         long    %12.0g                total personal earned income
+poverty         int     %8.0g                 poverty status
+disabwrk        byte    %8.0g      DISABWRK   work disability
+vetdisab        byte    %8.0g      VETDISAB   va service-connected disability rating
+diffrem         byte    %8.0g      DIFFREM    cognitive difficulty
+diffphys        byte    %8.0g      DIFFPHYS   ambulatory difficulty
+diffmob         byte    %8.0g      DIFFMOB    independent living difficulty
+diffcare        byte    %8.0g      DIFFCARE   self-care difficulty
+diffsens        byte    %8.0g      DIFFSENS   vision or hearing difficulty
+diffeye         byte    %8.0g      DIFFEYE    vision difficulty
+diffhear        byte    %8.0g      DIFFHEAR   hearing difficulty
+cpiurs          double  %10.0g                CPI-U-RS, All items
+realftotinc     float   %9.0g                 
+tfaminc         float   %9.0g                 Transformed family income
+--------------------------------------------------------------------------------------------------------------------------
+Sorted by: 
+     Note: Dataset has changed since last saved.
+
+. gstats sum tfaminc 
+
+                  Transformed family income                  
+-------------------------------------------------------------
+      Percentiles      Smallest                              
+  1%            0     -35308.84                              
+  5%     5884.696     -35308.84                              
+ 10%        10455     -33065.05      Obs           46,484,362
+ 25%     21203.68     -33065.05      Sum of Wgt.   46,484,362
+                                                             
+ 50%     39576.57                    Mean            52883.23
+                        Largest      Std. Dev.       54712.68
+ 75%     65618.98       1824336                              
+ 90%     102952.8       1824336      Variance        2.99e+09
+ 95%     141592.5       1848603      Skewness        3.885136
+ 99%     286661.1       1848603      Kurtosis        30.14801
+

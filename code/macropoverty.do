@@ -17,7 +17,6 @@
 			
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
-
 ****************************************
 *1. Preamble
 ****************************************
@@ -25,12 +24,12 @@
 clear all
 cap log close
 set more off
-log 
 
-*use once
+capture log using macropoverty.txt, text replace
+
+*Install useful packages one time before running code
 //ssc install gtools
 //ssc install egenmore
-
 
 ****************************************
 *2. Create directories for data and code, load ACS data set
@@ -42,16 +41,37 @@ global data = "${dir}/data"
 global code = "${dir}/code"
 
 cd ${data}
-use acs_extract.dta
 
+* load CPI data
+sysuse cpi_annual, clear 
+keep year cpiurs 
+tempfile cpi 
+save `cpi' 
 
+*load ACS dataset
+use acs_extract.dta, clear
+
+merge m:1 year using `cpi', keep(3) nogenerate
 ****************************************
 *3.0 Generate income and rank by quintiles
 ****************************************
 
+*get rid of missing values
+mvdecode ftotinc, mv(9999999)
+
+*adjust wages for 2018 values
+sum year
+local maxyear =`r(max)'
+sum cpiurs if year ==`maxyear'
+local basevalue =`r(mean)'
+gen realftotinc = ftotinc * [`basevalue'/cpiurs]
+
 *transformed family income
-gen tfaminc = (ftotinc / sqrt(famsize))
+
+gen tfaminc = (realftotinc / sqrt(famsize))
 label var tfaminc "Transformed family income"
+
+stop
 
 *create quintiles based off transformed family income (tfaminc)
 gegen tfaminc5 = xtile(tfaminc) [pw=perwt], nq(5)
@@ -121,23 +141,28 @@ bysort year: sum annual_famhours if tfaminc5==1
 bysort year: sum tfaminc if tfaminc5==1
 
 *How have hours worked by bottom 20% changed over time?
-
 *lets collapse our data to get tranformed income, and hours worked, by year
 
-preserve
-keep if tfaminc5 == 1
-gcollapse (mean) meanwages = tfaminc [pw=perwt], by(year)
-list year meanwages
-export excel "
-restore
+****decode tfaminc5, gen(tfaminc5string)****
 
 preserve
-keep if tfaminc5 == 1
-gcollapse (mean) meanhours = annual_famhours [pw=perwt], by(year)
-list year meanhours
+gcollapse (mean) meanwages = tfaminc [pw=perwt], by(year tfaminc5)
+keep if tfaminc5!=. 
+reshape wide meanwages, i(year) j(tfaminc5)
+list
+export excel "meanwages_bottom20.xls", firstrow(variables) replace
+restore
+
+
+preserve
+gcollapse (mean) meanhours = annual_famhours [pw=perwt], by(year tfaminc5)
+keep if tfaminc5!=. 
+reshape wide meanhours, i(year) j(tfaminc5)
+list
+export excel "meanhours_bottom20.xls", firstrow(variables) replace
 restore
 
 /*Future analysis might also include mean wages and hours worked
-by quintile, by age by race, and more. */
-
-log close macropoverty.txt
+for all quintiles, by age by race, and more. */
+*/
+capture log close
