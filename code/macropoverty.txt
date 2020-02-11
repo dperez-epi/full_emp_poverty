@@ -193,3 +193,357 @@ Sorted by:
  95%     141592.5       1848603      Skewness        3.885136
  99%     286661.1       1848603      Kurtosis        30.14801
 
+. m  
+------------------------------------------------- mata (type end to exit) ------------------------------------------------
+: clear all
+invalid expression
+r(3000);
+
+: cap log close
+invalid expression
+r(3000);
+
+: set more off
+invalid expression
+r(3000);
+
+: 
+: capture log using macropoverty.txt, text replace
+'using' found where almost anything else expected
+r(3000);
+
+: 
+: *Install useful packages one time before running code
+invalid expression
+r(3000);
+
+: //ssc install gtools
+expression invalid
+r(3000);
+
+: //ssc install egenmore
+expression invalid
+r(3000);
+
+: 
+: ****************************************
+> *2. Create directories for data and code, load ACS data set
+'for' found where almost anything else expected
+r(3000);
+
+: ****************************************
+> 
+> global dir = "/projects/dperez/macropoverty"
+'global' found where almost anything else expected
+r(3000);
+
+: 
+: global data = "${dir}/data"
+'global' found where almost anything else expected
+r(3000);
+
+: global code = "${dir}/code"
+'global' found where almost anything else expected
+r(3000);
+
+: 
+: cd ${data}
+                 <istmt>:  3499  cd not found
+r(3499);
+
+: 
+: * load CPI data
+invalid expression
+r(3000);
+
+: sysuse cpi_annual, clear 
+invalid expression
+r(3000);
+
+: keep year cpiurs 
+invalid expression
+r(3000);
+
+: tempfile cpi 
+invalid expression
+r(3000);
+
+: save `cpi' 
+                 <istmt>:  3499  save not found
+r(3499);
+
+: 
+: *load ACS dataset
+invalid expression
+r(3000);
+
+: use acs_extract.dta, clear
+invalid expression
+r(3000);
+
+: 
+: ****************************************
+> *3.0 Generate income and rank by quintiles
+invalid expression
+r(3000);
+
+: ****************************************
+> 
+> *get rid of missing values
+invalid expression
+r(3000);
+
+: mvdecode ftotinc, mv(9999999)
+invalid expression
+r(3000);
+
+: 
+: *transformed family income
+invalid expression
+r(3000);
+
+: 
+: gen tfaminc = (ftotinc / sqrt(famsize))
+invalid lval
+r(3000);
+
+: label var tfaminc "Transformed family income"
+invalid expression
+r(3000);
+
+: 
+: gstats sum tfaminc
+invalid expression
+r(3000);
+
+: 
+: stop
+                 <istmt>:  3499  stop not found
+r(3499);
+
+: 
+: clear all
+invalid expression
+r(3000);
+
+: cap log close
+invalid expression
+r(3000);
+
+: set more off
+invalid expression
+r(3000);
+
+: 
+: capture log using macropoverty.txt, text replace
+'using' found where almost anything else expected
+r(3000);
+
+: 
+: *Install useful packages one time before running code
+invalid expression
+r(3000);
+
+: //ssc install gtools
+expression invalid
+r(3000);
+
+: //ssc install egenmore
+expression invalid
+r(3000);
+
+: 
+: ****************************************
+> *2. Create directories for data and code, load ACS data set
+'for' found where almost anything else expected
+r(3000);
+
+: ****************************************
+> 
+> global dir = "/projects/dperez/macropoverty"
+'global' found where almost anything else expected
+r(3000);
+
+: 
+: global data = "${dir}/data"
+'global' found where almost anything else expected
+r(3000);
+
+: global code = "${dir}/code"
+'global' found where almost anything else expected
+r(3000);
+
+: 
+: cd ${data}
+                 <istmt>:  3499  cd not found
+r(3499);
+
+: 
+: * load CPI data
+invalid expression
+r(3000);
+
+: sysuse cpi_annual, clear 
+invalid expression
+r(3000);
+
+: keep year cpiurs 
+invalid expression
+r(3000);
+
+: tempfile cpi 
+invalid expression
+r(3000);
+
+: save `cpi' 
+                 <istmt>:  3499  save not found
+r(3499);
+
+: 
+: *load ACS dataset
+invalid expression
+r(3000);
+
+: use acs_extract.dta, clear
+invalid expression
+r(3000);
+
+: 
+: ****************************************
+> *3.0 Generate income and rank by quintiles
+invalid expression
+r(3000);
+
+: ****************************************
+> 
+> *get rid of missing values
+invalid expression
+r(3000);
+
+: mvdecode ftotinc, mv(9999999)
+invalid expression
+r(3000);
+
+: 
+: *transformed family income
+invalid expression
+r(3000);
+
+: 
+: gen tfaminc = (ftotinc / sqrt(famsize))
+invalid lval
+r(3000);
+
+: label var tfaminc "Transformed family income"
+invalid expression
+r(3000);
+
+: 
+: gstats sum tfaminc
+invalid expression
+r(3000);
+
+: 
+: stop
+                 <istmt>:  3499  stop not found
+r(3499);
+
+: 
+: clear all
+invalid expression
+r(3000);
+
+: cap log close
+invalid expression
+r(3000);
+
+: set more off
+invalid expression
+r(3000);
+
+: 
+: capture log using macropoverty.txt, text replace
+'using' found where almost anything else expected
+r(3000);
+
+: clear all
+invalid expression
+r(3000);
+
+: hi
+                 <istmt>:  3499  hi not found
+r(3499);
+
+: exit
+                 <istmt>:  3499  exit not found
+r(3499);
+
+: quit
+                 <istmt>:  3499  quit not found
+r(3499);
+
+: m'
+                 <istmt>:  3499  m not found
+r(3499);
+
+: k
+                 <istmt>:  3499  k not found
+r(3499);
+
+: s
+                 <istmt>:  3499  s not found
+r(3499);
+
+: qwe 
+                 <istmt>:  3499  qwe not found
+r(3499);
+
+: mata
+
+: ls
+                 <istmt>:  3499  ls not found
+r(3499);
+
+: 2+3
+  5
+
+: exit
+                 <istmt>:  3499  exit not found
+r(3499);
+
+: exit()
+
+: ls
+                 <istmt>:  3499  ls not found
+r(3499);
+
+: ;
+
+: :
+> hi
+expression invalid
+r(3000);
+
+: ls
+                 <istmt>:  3499  ls not found
+r(3499);
+
+: !
+nothing found where subexp expected
+r(3000);
+
+: mata clear
+
+: end
+--------------------------------------------------------------------------------------------------------------------------
+
+. ls
+
+total 6161508
+-rw-rw-r-- 1 dperez epi 6309363017 Jan 10 16:09 acs_extract.dta
+-rw-rw-r-- 1 dperez epi       6656 Feb 11 16:05 meanhours_bottom20.xls
+-rw-rw-r-- 1 dperez epi       6656 Feb 11 16:05 meanwages_bottom20.xls
+
+. clear all
+
+. cap log close

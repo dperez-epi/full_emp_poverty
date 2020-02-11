@@ -51,7 +51,7 @@ save `cpi'
 *load ACS dataset
 use acs_extract.dta, clear
 
-
+merge m:1 year using `cpi', keep(3) nogenerate
 ****************************************
 *3.0 Generate income and rank by quintiles
 ****************************************
@@ -59,9 +59,17 @@ use acs_extract.dta, clear
 *get rid of missing values
 mvdecode ftotinc, mv(9999999)
 
-*transformed family income
+*adjust wages for 2018 values
+sum year
+local maxyear =`r(max)'
+sum cpiurs if year ==`maxyear'
+local basevalue =`r(mean)'
 
-gen tfaminc = (ftotinc / sqrt(famsize))
+*generate total family income in real wages
+gen realftotinc = ftotinc * [`basevalue'/cpiurs]
+
+*transform our family income variable
+gen tfaminc = (realftotinc / sqrt(famsize))
 label var tfaminc "Transformed family income"
 
 *create quintiles based off transformed family income (tfaminc)
