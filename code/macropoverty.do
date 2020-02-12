@@ -51,10 +51,12 @@ save `cpi'
 *load ACS dataset
 use acs_extract.dta, clear
 
+*merge cpi data to ACS
 merge m:1 year using `cpi', keep(3) nogenerate
-****************************************
-*3.0 Generate income and rank by quintiles
-****************************************
+
+**************************************************************
+*3.0 Generate family income from all sources, and rank by quintiles
+**************************************************************
 
 *get rid of missing values
 mvdecode ftotinc, mv(9999999)
@@ -74,8 +76,8 @@ label var tfaminc "Transformed family income"
 
 *create quintiles based off transformed family income (tfaminc)
 gegen tfaminc5 = xtile(tfaminc) [pw=perwt], nq(5)
-
 label var tfaminc5 "Transformed family income quintiles"
+
 #delimit;
 label def tfaminc5
 1 "First quintile 0–20%"
@@ -87,8 +89,82 @@ label def tfaminc5
 #delimit cr
 lab val tfaminc5 tfaminc5
 
+**************************************************************
+*3.1 Generate family income from salary and wages, and rank by quintiles
+**************************************************************
+
+*remove missing values from wage and salary
+mvdecode incwage, mv(999999 999998) 
+
+*adjust wage and salary to real 2018 dollars
+gen realincwage = incwage * [`basevalue'/cpiurs]
+
+*sum real wages within families
+gegen incwagefam = total(realincwage), by(year serial famsize)
+*transform real wages
+gen tincwagefam = (incwagefam / sqrt(famsize))
+
+label var tincwagefam "Transformed family salary and wages"
+
+*create quintiles for family salary and wage incomes
+gegen tincwagefam5 = xtile(incwagefam) [pw=perwt], nq(5)
+label var tincwagefam5 "Transformed family salary and wage quintiles"
+
+#delimit;
+label def tincwagefam5
+1 "First quintile 0–20%"
+2 "Second quintile 20–40%"
+3 "Third quintile 40–60%"
+4 "Fourth quintile 60–80%"
+5 "Fifth quintile 80–100%"
+;
+#delimit cr
+lab val tincwagefam5 tincwagefam5
+
+/*
+It appears that the amount of observations with 0 wage and salary income
+certainly skew the distribution of our data. This seems problematic
+should we restrict our sample somehow? What does our data look like?
+
+.  gstats sum tincwagefam
+
+             Transformed family salary and wages             
+-------------------------------------------------------------
+      Percentiles      Smallest                              
+  1%            0             0                              
+  5%            0             0                              
+ 10%            0             0      Obs           48,162,117
+ 25%     5481.521             0      Sum of Wgt.   48,162,117
+                                                             
+ 50%     28542.65                    Mean            40055.29
+                        Largest      Std. Dev.       49263.01
+ 75%     55833.76       1739392                              
+ 90%     89453.55       1919415      Variance        2.43e+09
+ 95%     119935.1       1919415      Skewness        3.408496
+ 99%       245602       1919415      Kurtosis        24.63875
+
+. gstats sum tfaminc
+
+                  Transformed family income                  
+-------------------------------------------------------------
+      Percentiles      Smallest                              
+  1%            0     -35308.84                              
+  5%     5884.696     -35308.84                              
+ 10%        10455     -33065.05      Obs           46,484,362
+ 25%     21203.68     -33065.05      Sum of Wgt.   46,484,362
+                                                             
+ 50%     39576.57                    Mean            52883.23
+                        Largest      Std. Dev.       54712.68
+ 75%     65618.98       1824336                              
+ 90%     102952.8       1824336      Variance        2.99e+09
+ 95%     141592.5       1848603      Skewness        3.885136
+ 99%     286661.1       1848603      Kurtosis        30.14801
+
+. 
+
+*/
 ****************************************
-*3.1 Calculate annual hours worked by family
+*3.2 Calculate annual hours worked by family
 ****************************************
 
 /***********************************
@@ -126,37 +202,35 @@ label var annual_famhours "Annual hours worked by family"
 *3.2 Descriptive stats
 ****************************************
 
-hashsort sample year serial pernum
-list year serial famsize pernum tfaminc uhrswork avgwkswork annpersonhrs annual_famhours in 1/20, table
+hashsort year sample serial pernum
+list year serial famsize pernum tfaminc incwage tincwagefam uhrswork avgwkswork annpersonhrs annual_famhours in 1/20, table
 
 *Transformed family income by quintile
-bysort tfaminc5: sum tfaminc
+bysort tincwagefam5: sum tincwagefam
 *Annual hours worked by family, by quintile
-bysort tfaminc5: sum annual_famhours
+bysort tincwagefam5: sum annual_famhours
+stop
 
 *Hours worked annually by bottom 20% of earner families, by year
-bysort year: sum annual_famhours if tfaminc5==1
+bysort year: sum annual_famhours if tincwagefam5==1
 *Transformed income for bottom 20% of earning families, by year
-bysort year: sum tfaminc if tfaminc5==1
+bysort year: sum tincwagefam if tincwagefam5==1
 
 *How have hours worked by bottom 20% changed over time?
 *lets collapse our data to get tranformed income, and hours worked, by year
 
-****decode tfaminc5, gen(tfaminc5string)****
-
 preserve
-gcollapse (mean) meanwages = tfaminc [pw=perwt], by(year tfaminc5)
-keep if tfaminc5!=. 
-reshape wide meanwages, i(year) j(tfaminc5)
+gcollapse (mean) meanwages = tincwagefam [pw=perwt], by(year tincwagefam5)
+keep if tincwagefam5!="." 
+reshape wide meanwages, i(year) j(tincwagefam5)
 list
 export excel "meanwages_bottom20.xls", firstrow(variables) replace
 restore
 
-
 preserve
-gcollapse (mean) meanhours = annual_famhours [pw=perwt], by(year tfaminc5)
-keep if tfaminc5!=. 
-reshape wide meanhours, i(year) j(tfaminc5)
+gcollapse (mean) meanhours = annual_famhours [pw=perwt], by(year tincwagefam5)
+keep if tincwagefam!=. 
+reshape wide meanhours, i(year) j(tincwagefam5)
 list
 export excel "meanhours_bottom20.xls", firstrow(variables) replace
 restore

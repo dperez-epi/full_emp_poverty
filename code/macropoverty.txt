@@ -28,13 +28,14 @@
 . tempfile cpi 
 
 . save `cpi' 
-file /tmp/St31707.000008 saved
+file /tmp/St17703.000001 saved
 
 . 
 . *load ACS dataset
 . use acs_extract.dta, clear
 
 . 
+. *merge cpi data to ACS
 . merge m:1 year using `cpi', keep(3) nogenerate
 
     Result                           # of obs.
@@ -43,9 +44,10 @@ file /tmp/St31707.000008 saved
     matched                        48,162,117  
     -----------------------------------------
 
-. ****************************************
-. *3.0 Generate income and rank by quintiles
-. ****************************************
+. 
+. **************************************************************
+. *3.0 Generate family income from all sources, and rank by quintiles
+. **************************************************************
 . 
 . *get rid of missing values
 . mvdecode ftotinc, mv(9999999)
@@ -69,18 +71,244 @@ file /tmp/St31707.000008 saved
 
 . local basevalue =`r(mean)'
 
+. 
+. *generate total family income in real wages
 . gen realftotinc = ftotinc * [`basevalue'/cpiurs]
 (1,677,755 missing values generated)
 
 . 
-. *transformed family income
-. 
+. *transform our family income variable
 . gen tfaminc = (realftotinc / sqrt(famsize))
 (1,677,755 missing values generated)
 
 . label var tfaminc "Transformed family income"
 
 . 
+. *create quintiles based off transformed family income (tfaminc)
+. gegen tfaminc5 = xtile(tfaminc) [pw=perwt], nq(5)
+warning: type ignored with gegen function xtile
+
+. label var tfaminc5 "Transformed family income quintiles"
+
+. 
+. #delimit;
+delimiter now ;
+. label def tfaminc5
+> 1 "First quintile 0–20%"
+> 2 "Second quintile 20–40%"
+> 3 "Third quintile 40–60%"
+> 4 "Fourth quintile 60–80%"
+> 5 "Fifth quintile 80–100%"
+> ;
+
+. #delimit cr
+delimiter now cr
+. lab val tfaminc5 tfaminc5
+
+. 
+. **************************************************************
+. *3.1 Generate family income from salary and wages, and rank by quintiles
+. **************************************************************
+. 
+. *remove missing values from wage and salary
+. mvdecode incwage, mv(999999)
+     incwage: 9419704 missing values generated
+
+. 
+. *adjust wage and salary to real 2018 dollars
+. gen realincwage = incwage * [`basevalue'/cpiurs]
+(9,419,704 missing values generated)
+
+. 
+. *sum real wages within families
+. gegen incwagefam = total(realincwage), by(year serial famsize)
+
+. *transform real wages
+. gen tincwagefam = (incwagefam / sqrt(famsize))
+
+. 
+. label var tincwagefam "Transformed family salary and wages"
+
+. 
+. *create quintiles for family salary and wage incomes
+. gegen tincwagefam5 = xtile(incwagefam) [pw=perwt], nq(5)
+warning: type ignored with gegen function xtile
+
+. label var tincwagefam5 "Transformed family salary and wage quintiles"
+
+. 
+. #delimit;
+delimiter now ;
+. label def tincwagefam5
+> 1 "First quintile 0–20%"
+> 2 "Second quintile 20–40%"
+> 3 "Third quintile 40–60%"
+> 4 "Fourth quintile 60–80%"
+> 5 "Fifth quintile 80–100%"
+> ;
+
+. #delimit cr
+delimiter now cr
+. lab val tincwagefam5 tincwagefam5
+
+. 
+. ****************************************
+. *3.1 Calculate annual hours worked by family
+. ****************************************
+. 
+. /***********************************
+> We take the mid-point of each interval
+> *
+> *      weeks |
+> *worked last |
+> *      year, |
+> *intervalled |      Freq.     Percent        Cum.
+> *------------+-----------------------------------
+> *        n/a | 23,071,707       47.90       47.90
+> *1-13  weeks |  1,883,648        3.91       51.82
+> *14-26 weeks |  1,423,530        2.96       54.77
+> *27-39 weeks |  1,583,948        3.29       58.06
+> *40-47 weeks |  1,658,749        3.44       61.50
+> *48-49 weeks |    756,096        1.57       63.07
+> *50-52 weeks | 17,784,439       36.93      100.00
+> *------------+-----------------------------------
+> *      Total | 48,162,117      100.00
+> ***********************************/
+. 
+. *average hours worked per week, by individual
+. gen avgwkswork = wkswork2
+
+. recode avgwkswork (0=0) (1= 7) (2 = 20) (3 = 33) (4 = 43.5) (5=48.5) (6=51)
+(avgwkswork: 25090410 changes made)
+
+. 
+. *annual hours worked per person, which is usual hours worked * avg weeks worked
+. gen annpersonhrs = uhrswork * avgwkswork 
+
+. label var annpersonhrs "Usual hours worked annually, by individual"
+
+. 
+. *annual hours worked by family
+. gegen annual_famhours = total(annpersonhrs), by(year serial famsize)
+
+. label var annual_famhours "Annual hours worked by family"
+
+. 
+. ****************************************
+. *3.2 Descriptive stats
+. ****************************************
+. 
+. hashsort year sample serial pernum
+
+. list year serial famsize pernum tfaminc incwage tincwagefam uhrswork avgwkswork annpersonhrs annual_famhours in 1/20, table
+
+     +---------------------------------------------------------------------------------------------------------------+
+     | year   serial    famsize   pernum    tfaminc   incwage   tincwa~m   uhrswork   avgwks~k   annper~s   annual~s |
+     |---------------------------------------------------------------------------------------------------------------|
+  1. | 2000        1   2 family        1   56557.53      4000   42082.11         18       43.5        783       2823 |
+  2. | 2000        1   2 family        2   56557.53     36700   42082.11         40         51       2040       2823 |
+  3. | 2000        2          4        1   41600.67     54000   41600.67         48         51       2448       3258 |
+  4. | 2000        2          4        2   41600.67       900   41600.67         30          7        210       3258 |
+  5. | 2000        2          4        3   41600.67      2000   41600.67         30         20        600       3258 |
+     |---------------------------------------------------------------------------------------------------------------|
+  6. | 2000        2          4        4   41600.67         0   41600.67        n/a          0          0       3258 |
+  7. | 2000        3   1 family        1   14622.38      8000    11697.9         40         20        800        800 |
+  8. | 2000        4   1 family        1   67409.17      6100   8919.652          5         20        100        100 |
+  9. | 2000        5          4        1   31438.12      2800   30560.77         80          7        560       3845 |
+ 10. | 2000        5          4        2   31438.12     28000   30560.77         45         51       2295       3845 |
+     |---------------------------------------------------------------------------------------------------------------|
+ 11. | 2000        5          4        3   31438.12         0   30560.77        n/a          0          0       3845 |
+ 12. | 2000        5          4        4   31438.12     11000   30560.77         30         33        990       3845 |
+ 13. | 2000        6   1 family        1   14037.49         0          0        n/a          0          0          0 |
+ 14. | 2000        7   2 family        1   183010.6     52000   183010.6         40         51       2040       4080 |
+ 15. | 2000        7   2 family        2   183010.6    125000   183010.6         40         51       2040       4080 |
+     |---------------------------------------------------------------------------------------------------------------|
+ 16. | 2000        8   2 family        1   44563.61         0          0        n/a          0          0          0 |
+ 17. | 2000        8   2 family        2   44563.61         0          0        n/a          0          0          0 |
+ 18. | 2000        9   1 family        1   32609.37     32000   46791.62         40         51       2040       2040 |
+ 19. | 2000       10   1 family        1          0         0          0        n/a          0          0          0 |
+ 20. | 2000       11   2 family        1   42495.69         0   20679.17        n/a          0          0       2040 |
+     +---------------------------------------------------------------------------------------------------------------+
+
+. 
+. *Transformed family income by quintile
+. bysort tincwagefam5: sum tincwagefam
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> tincwagefam5 = First quintile 0–20%
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+ tincwagefam | 11,069,743    239.5168    738.3783          0    5022.75
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> tincwagefam5 = Second quintile 20–40%
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+ tincwagefam |  9,020,710     13712.6    7090.037    1282.53   36421.54
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> tincwagefam5 = Third quintile 40–60%
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+ tincwagefam |  8,981,145     31376.4    10512.66   9162.461   67134.64
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> tincwagefam5 = Fourth quintile 60–80%
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+ tincwagefam |  9,313,228    50636.32    15023.59   15534.04   111130.1
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> tincwagefam5 = Fifth quintile 80–100%
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+ tincwagefam |  9,777,291    107331.9    66737.16   25387.22    1919415
+
+
+. *Annual hours worked by family, by quintile
+. bysort tincwagefam5: sum annual_famhours
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> tincwagefam5 = First quintile 0–20%
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s | 11,069,743    339.6734    915.2946          0      24990
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> tincwagefam5 = Second quintile 20–40%
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |  9,020,710    2104.976    1144.511          0      21981
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> tincwagefam5 = Third quintile 40–60%
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |  8,981,145    3128.798    1250.411          7      32544
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> tincwagefam5 = Fourth quintile 60–80%
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |  9,313,228    3852.761    1412.815          7      32130
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> tincwagefam5 = Fifth quintile 80–100%
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |  9,777,291    4391.831    1692.938          7      33660
+
+
 . stop
 command stop is unrecognized
 r(199);
@@ -89,16 +317,251 @@ end of do-file
 
 r(199);
 
+
+. bysort year: sum tincwagefam if tincwagefam5==1
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2000
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+ tincwagefam |     65,999    239.8075    704.7605          0   4971.609
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2001
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+ tincwagefam |    229,329    206.4084    661.0114          0   5018.816
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2002
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+ tincwagefam |    206,505    201.9682    648.0699          0    4898.94
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2003
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+ tincwagefam |    234,318    212.1963    667.3508          0   4995.448
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2004
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+ tincwagefam |    236,671    203.6844    649.0827          0   4930.667
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2005
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+ tincwagefam |    574,549    204.4653    642.9628          0   5001.129
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2006
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+ tincwagefam |    637,419    263.8915    786.9867          0   5006.408
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2007
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+ tincwagefam |    639,580    248.0779    756.2153          0    4977.61
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2008
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+ tincwagefam |    634,860    239.5968    740.7164          0   4968.859
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2009
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+ tincwagefam |    668,064    239.8167    739.1774          0   4951.003
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2010
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+ tincwagefam |    708,691    234.6419    722.0927          0   4962.984
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2011
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+ tincwagefam |    807,983    251.3274    751.6408          0   4990.342
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2012
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+ tincwagefam |    792,625    245.5438    744.8406          0   5007.366
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2013
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+ tincwagefam |    770,819    250.6666    752.3749          0   5020.643
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2014
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+ tincwagefam |    773,532    241.5288    739.3001          0   4990.124
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2015
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+ tincwagefam |    773,048    235.3071    732.8188          0   4992.141
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2016
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+ tincwagefam |    768,750    236.6936    741.8828          0    5022.75
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2017
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+ tincwagefam |    764,104    231.1227    732.1384          0   5019.446
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2018
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+ tincwagefam |    782,897    264.9448    818.4187          0       5000
+
+
+. gstats tincwagefam
+Unknown stat tincwagefam. See help gstats or gstats dir.
+r(198);
+
+. gstats sum tincwagefam
+
+             Transformed family salary and wages             
+-------------------------------------------------------------
+      Percentiles      Smallest                              
+  1%            0             0                              
+  5%            0             0                              
+ 10%            0             0      Obs           48,162,117
+ 25%     5481.521             0      Sum of Wgt.   48,162,117
+                                                             
+ 50%     28542.65                    Mean            40055.29
+                        Largest      Std. Dev.       49263.01
+ 75%     55833.76       1739392                              
+ 90%     89453.55       1919415      Variance        2.43e+09
+ 95%     119935.1       1919415      Skewness        3.408496
+ 99%       245602       1919415      Kurtosis        24.63875
+
+. list age in 1/20
+
+     +-----+
+     | age |
+     |-----|
+  1. |  50 |
+  2. |  45 |
+  3. |  68 |
+  4. |  13 |
+  5. |  29 |
+     |-----|
+  6. |  22 |
+  7. |  31 |
+  8. |   1 |
+  9. |  62 |
+ 10. |   6 |
+     |-----|
+ 11. |   8 |
+ 12. |  76 |
+ 13. |  13 |
+ 14. |   6 |
+ 15. |  41 |
+     |-----|
+ 16. |  25 |
+ 17. |  50 |
+ 18. |  59 |
+ 19. |  39 |
+ 20. |  45 |
+     +-----+
+
+. gstats sum tincwagefam if age>16
+
+             Transformed family salary and wages             
+-------------------------------------------------------------
+      Percentiles      Smallest                              
+  1%            0             0                              
+  5%            0             0                              
+ 10%            0             0      Obs           38,086,881
+ 25%     2185.292             0      Sum of Wgt.   38,086,881
+                                                             
+ 50%     28072.41                    Mean            40023.33
+                        Largest      Std. Dev.       50546.15
+ 75%     56852.91       1739392                              
+ 90%     91176.14       1919415      Variance        2.55e+09
+ 95%     121844.3       1919415      Skewness        3.416053
+ 99%     250115.2       1919415      Kurtosis         24.9262
+
+. gstats sum tincwagefam
+
+             Transformed family salary and wages             
+-------------------------------------------------------------
+      Percentiles      Smallest                              
+  1%            0             0                              
+  5%            0             0                              
+ 10%            0             0      Obs           48,162,117
+ 25%     5481.521             0      Sum of Wgt.   48,162,117
+                                                             
+ 50%     28542.65                    Mean            40055.29
+                        Largest      Std. Dev.       49263.01
+ 75%     55833.76       1739392                              
+ 90%     89453.55       1919415      Variance        2.43e+09
+ 95%     119935.1       1919415      Skewness        3.408496
+ 99%       245602       1919415      Kurtosis        24.63875
+
+. help levelsof
+
+. levelsof avgwkswork 
+0 7 20 33 43.5 48.5 51
+
+. unique avgwkswork 
+Number of unique values of avgwkswork is  7
+Number of records is  48162117
+
+. unique tincwagefam
+Number of unique values of tincwagefam is  597396
+Number of records is  48162117
+
 . des
 
 Contains data from acs_extract.dta
   obs:    48,162,117                          
- vars:            71                          08 JAN 2020 14:39
- size: 7,079,831,199                          
---------------------------------------------------------------------------------------------------------------------------
+ vars:            79                          08 JAN 2020 14:39
+ size: 8,717,343,177                          
+-----------------------------------------------------------------------------------------------------------------------------
               storage   display    value
 variable name   type    format     label      variable label
---------------------------------------------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------------------
 year            int     %8.0g      YEAR       census year
 sample          long    %12.0g     SAMPLE     ipums sample identifier
 serial          long    %12.0g                household serial number
@@ -172,9 +635,52 @@ diffhear        byte    %8.0g      DIFFHEAR   hearing difficulty
 cpiurs          double  %10.0g                CPI-U-RS, All items
 realftotinc     float   %9.0g                 
 tfaminc         float   %9.0g                 Transformed family income
---------------------------------------------------------------------------------------------------------------------------
-Sorted by: 
+tfaminc5        byte    %24.0g     tfaminc5   Transformed family income quintiles
+realincwage     float   %9.0g                 
+incwagefam      double  %10.0g                
+tincwagefam     float   %9.0g                 Transformed family salary and wages
+tincwagefam5    byte    %24.0g     tincwagefam5
+                                              Transformed family salary and wage quintiles
+avgwkswork      float   %9.0g                 
+annpersonhrs    float   %9.0g                 Usual hours worked annually, by individual
+annual_famhours double  %10.0g                Annual hours worked by family
+-----------------------------------------------------------------------------------------------------------------------------
+Sorted by: year
      Note: Dataset has changed since last saved.
+
+. tab tincwagefam if tincwagefam==0
+
+Transformed |
+     family |
+ salary and |
+      wages |      Freq.     Percent        Cum.
+------------+-----------------------------------
+          0 |  9,491,626      100.00      100.00
+------------+-----------------------------------
+      Total |  9,491,626      100.00
+
+. sum tincwagefam if tincwagefam!=0
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+ tincwagefam | 38,670,491    49886.81    50319.44   1.484023    1919415
+
+. gstats sum tincwagefam if tincwagefam!=0
+
+             Transformed family salary and wages             
+-------------------------------------------------------------
+      Percentiles      Smallest                              
+  1%     680.3361      1.484023                              
+  5%     4092.001      1.484023                              
+ 10%     8364.001      1.484023      Obs           38,670,491
+ 25%     19413.21      1.484023      Sum of Wgt.   38,670,491
+                                                             
+ 50%     37982.95                    Mean            49886.81
+                        Largest      Std. Dev.       50319.44
+ 75%     63639.61       1739392                              
+ 90%     98343.68       1919415      Variance        2.53e+09
+ 95%     131564.7       1919415      Skewness        3.513507
+ 99%     264542.8       1919415      Kurtosis        25.11438
 
 . gstats sum tfaminc 
 
@@ -193,357 +699,1052 @@ Sorted by:
  95%     141592.5       1848603      Skewness        3.885136
  99%     286661.1       1848603      Kurtosis        30.14801
 
-. m  
-------------------------------------------------- mata (type end to exit) ------------------------------------------------
-: clear all
-invalid expression
-r(3000);
-
-: cap log close
-invalid expression
-r(3000);
-
-: set more off
-invalid expression
-r(3000);
-
-: 
-: capture log using macropoverty.txt, text replace
-'using' found where almost anything else expected
-r(3000);
-
-: 
-: *Install useful packages one time before running code
-invalid expression
-r(3000);
-
-: //ssc install gtools
-expression invalid
-r(3000);
-
-: //ssc install egenmore
-expression invalid
-r(3000);
-
-: 
-: ****************************************
-> *2. Create directories for data and code, load ACS data set
-'for' found where almost anything else expected
-r(3000);
-
-: ****************************************
-> 
-> global dir = "/projects/dperez/macropoverty"
-'global' found where almost anything else expected
-r(3000);
-
-: 
-: global data = "${dir}/data"
-'global' found where almost anything else expected
-r(3000);
-
-: global code = "${dir}/code"
-'global' found where almost anything else expected
-r(3000);
-
-: 
-: cd ${data}
-                 <istmt>:  3499  cd not found
-r(3499);
-
-: 
-: * load CPI data
-invalid expression
-r(3000);
-
-: sysuse cpi_annual, clear 
-invalid expression
-r(3000);
-
-: keep year cpiurs 
-invalid expression
-r(3000);
-
-: tempfile cpi 
-invalid expression
-r(3000);
-
-: save `cpi' 
-                 <istmt>:  3499  save not found
-r(3499);
-
-: 
-: *load ACS dataset
-invalid expression
-r(3000);
-
-: use acs_extract.dta, clear
-invalid expression
-r(3000);
-
-: 
-: ****************************************
-> *3.0 Generate income and rank by quintiles
-invalid expression
-r(3000);
-
-: ****************************************
-> 
-> *get rid of missing values
-invalid expression
-r(3000);
-
-: mvdecode ftotinc, mv(9999999)
-invalid expression
-r(3000);
-
-: 
-: *transformed family income
-invalid expression
-r(3000);
-
-: 
-: gen tfaminc = (ftotinc / sqrt(famsize))
-invalid lval
-r(3000);
-
-: label var tfaminc "Transformed family income"
-invalid expression
-r(3000);
-
-: 
-: gstats sum tfaminc
-invalid expression
-r(3000);
-
-: 
-: stop
-                 <istmt>:  3499  stop not found
-r(3499);
-
-: 
-: clear all
-invalid expression
-r(3000);
-
-: cap log close
-invalid expression
-r(3000);
-
-: set more off
-invalid expression
-r(3000);
-
-: 
-: capture log using macropoverty.txt, text replace
-'using' found where almost anything else expected
-r(3000);
-
-: 
-: *Install useful packages one time before running code
-invalid expression
-r(3000);
-
-: //ssc install gtools
-expression invalid
-r(3000);
-
-: //ssc install egenmore
-expression invalid
-r(3000);
-
-: 
-: ****************************************
-> *2. Create directories for data and code, load ACS data set
-'for' found where almost anything else expected
-r(3000);
-
-: ****************************************
-> 
-> global dir = "/projects/dperez/macropoverty"
-'global' found where almost anything else expected
-r(3000);
-
-: 
-: global data = "${dir}/data"
-'global' found where almost anything else expected
-r(3000);
-
-: global code = "${dir}/code"
-'global' found where almost anything else expected
-r(3000);
-
-: 
-: cd ${data}
-                 <istmt>:  3499  cd not found
-r(3499);
-
-: 
-: * load CPI data
-invalid expression
-r(3000);
-
-: sysuse cpi_annual, clear 
-invalid expression
-r(3000);
-
-: keep year cpiurs 
-invalid expression
-r(3000);
-
-: tempfile cpi 
-invalid expression
-r(3000);
-
-: save `cpi' 
-                 <istmt>:  3499  save not found
-r(3499);
-
-: 
-: *load ACS dataset
-invalid expression
-r(3000);
-
-: use acs_extract.dta, clear
-invalid expression
-r(3000);
-
-: 
-: ****************************************
-> *3.0 Generate income and rank by quintiles
-invalid expression
-r(3000);
-
-: ****************************************
-> 
-> *get rid of missing values
-invalid expression
-r(3000);
-
-: mvdecode ftotinc, mv(9999999)
-invalid expression
-r(3000);
-
-: 
-: *transformed family income
-invalid expression
-r(3000);
-
-: 
-: gen tfaminc = (ftotinc / sqrt(famsize))
-invalid lval
-r(3000);
-
-: label var tfaminc "Transformed family income"
-invalid expression
-r(3000);
-
-: 
-: gstats sum tfaminc
-invalid expression
-r(3000);
-
-: 
-: stop
-                 <istmt>:  3499  stop not found
-r(3499);
-
-: 
-: clear all
-invalid expression
-r(3000);
-
-: cap log close
-invalid expression
-r(3000);
-
-: set more off
-invalid expression
-r(3000);
-
-: 
-: capture log using macropoverty.txt, text replace
-'using' found where almost anything else expected
-r(3000);
-
-: clear all
-invalid expression
-r(3000);
-
-: hi
-                 <istmt>:  3499  hi not found
-r(3499);
-
-: exit
-                 <istmt>:  3499  exit not found
-r(3499);
-
-: quit
-                 <istmt>:  3499  quit not found
-r(3499);
-
-: m'
-                 <istmt>:  3499  m not found
-r(3499);
-
-: k
-                 <istmt>:  3499  k not found
-r(3499);
-
-: s
-                 <istmt>:  3499  s not found
-r(3499);
-
-: qwe 
-                 <istmt>:  3499  qwe not found
-r(3499);
-
-: mata
-
-: ls
-                 <istmt>:  3499  ls not found
-r(3499);
-
-: 2+3
-  5
-
-: exit
-                 <istmt>:  3499  exit not found
-r(3499);
-
-: exit()
-
-: ls
-                 <istmt>:  3499  ls not found
-r(3499);
-
-: ;
-
-: :
-> hi
-expression invalid
-r(3000);
-
-: ls
-                 <istmt>:  3499  ls not found
-r(3499);
-
-: !
-nothing found where subexp expected
-r(3000);
-
-: mata clear
-
-: end
---------------------------------------------------------------------------------------------------------------------------
-
-. ls
-
-total 6161508
--rw-rw-r-- 1 dperez epi 6309363017 Jan 10 16:09 acs_extract.dta
--rw-rw-r-- 1 dperez epi       6656 Feb 11 16:05 meanhours_bottom20.xls
--rw-rw-r-- 1 dperez epi       6656 Feb 11 16:05 meanwages_bottom20.xls
-
-. clear all
-
-. cap log close
+. mvdecode incwage, mv(999999 999998) 
+
+. gen realincwage = incwage * [`basevalue'/cpiurs]
+variable realincwage already defined
+r(110);
+
+. gstats sum tfaminc if tfaminc ==0-
+invalid syntax
+r(198);
+
+. sum tfaminc if tfaminc==0
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+     tfaminc |    593,706           0           0          0          0
+
+. sum tincwagefam if tincwagefam==0 & age > 16
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+ tincwagefam |  8,654,790           0           0          0          0
+
+. sum tincwagefam if tincwagefam==0 & age > 16 & age <=65
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+ tincwagefam |  3,628,838           0           0          0          0
+
+. sum tincwagefam if tincwagefam==0 & age > 16 & age <=65,d
+
+             Transformed family salary and wages
+-------------------------------------------------------------
+      Percentiles      Smallest
+ 1%            0              0
+ 5%            0              0
+10%            0              0       Obs           3,628,838
+25%            0              0       Sum of Wgt.   3,628,838
+
+50%            0                      Mean                  0
+                        Largest       Std. Dev.             0
+75%            0              0
+90%            0              0       Variance              0
+95%            0              0       Skewness              .
+99%            0              0       Kurtosis              .
+
+. sum tincwagefam if & age > 16 & age <=65,d
+&age invalid name
+r(198);
+
+. sum tincwagefam if age > 16 & age <=65,d
+
+             Transformed family salary and wages
+-------------------------------------------------------------
+      Percentiles      Smallest
+ 1%            0              0
+ 5%            0              0
+10%            0              0       Obs          30,558,511
+25%      13885.9              0       Sum of Wgt.    30558511
+
+50%     35999.12                      Mean           46985.86
+                        Largest       Std. Dev.      51761.01
+75%     63295.15        1739392
+90%     98240.34        1919415       Variance       2.68e+09
+95%     130378.2        1919415       Skewness       3.349756
+99%       262648        1919415       Kurtosis        24.1819
+
+. gstats tfaminc
+Unknown stat tfaminc. See help gstats or gstats dir.
+r(198);
+
+. gstats sum tfaminc
+
+                  Transformed family income                  
+-------------------------------------------------------------
+      Percentiles      Smallest                              
+  1%            0     -35308.84                              
+  5%     5884.696     -35308.84                              
+ 10%        10455     -33065.05      Obs           46,484,362
+ 25%     21203.68     -33065.05      Sum of Wgt.   46,484,362
+                                                             
+ 50%     39576.57                    Mean            52883.23
+                        Largest      Std. Dev.       54712.68
+ 75%     65618.98       1824336                              
+ 90%     102952.8       1824336      Variance        2.99e+09
+ 95%     141592.5       1848603      Skewness        3.885136
+ 99%     286661.1       1848603      Kurtosis        30.14801
+
+. gstats sum tincwagefam
+
+             Transformed family salary and wages             
+-------------------------------------------------------------
+      Percentiles      Smallest                              
+  1%            0             0                              
+  5%            0             0                              
+ 10%            0             0      Obs           48,162,117
+ 25%     5481.521             0      Sum of Wgt.   48,162,117
+                                                             
+ 50%     28542.65                    Mean            40055.29
+                        Largest      Std. Dev.       49263.01
+ 75%     55833.76       1739392                              
+ 90%     89453.55       1919415      Variance        2.43e+09
+ 95%     119935.1       1919415      Skewness        3.408496
+ 99%       245602       1919415      Kurtosis        24.63875
+
+. des empstat
+
+              storage   display    value
+variable name   type    format     label      variable label
+-----------------------------------------------------------------------------------------------------------------------------
+empstat         byte    %8.0g      EMPSTAT    employment status [general version]
+
+. tab empstat
+
+ employment status |
+ [general version] |      Freq.     Percent        Cum.
+-------------------+-----------------------------------
+               n/a |  9,419,705       19.56       19.56
+          employed | 22,158,855       46.01       65.57
+        unemployed |  1,634,644        3.39       68.96
+not in labor force | 14,948,913       31.04      100.00
+-------------------+-----------------------------------
+             Total | 48,162,117      100.00
+
+. des
+
+Contains data from acs_extract.dta
+  obs:    48,162,117                          
+ vars:            79                          08 JAN 2020 14:39
+ size: 8,717,343,177                          
+-----------------------------------------------------------------------------------------------------------------------------
+              storage   display    value
+variable name   type    format     label      variable label
+-----------------------------------------------------------------------------------------------------------------------------
+year            int     %8.0g      YEAR       census year
+sample          long    %12.0g     SAMPLE     ipums sample identifier
+serial          long    %12.0g                household serial number
+cbserial        double  %12.0g                original census bureau household serial number
+hhwt            int     %8.0g                 household weight
+hhtype          byte    %8.0g      HHTYPE     household type
+cluster         double  %12.0g                household cluster for variance estimation
+region          byte    %8.0g      REGION     census region and division
+statefip        byte    %8.0g      STATEFIP   state (fips code)
+countyfip       int     %8.0g                 county (fips code)
+density         double  %12.0g                population-weighted density of puma
+metro           byte    %8.0g      METRO      metropolitan status
+metarea         int     %8.0g      METAREA    metropolitan area [general version]
+metaread        int     %8.0g      METAREAD   metropolitan area [detailed version]
+city            int     %8.0g      CITY       city
+citypop         long    %12.0g                city population
+puma            long    %12.0g                public use microdata area
+strata          long    %12.0g                household strata for variance estimation
+gq              byte    %8.0g      GQ         group quarters status
+hhincome        long    %12.0g                total household income
+foodstmp        byte    %8.0g      FOODSTMP   food stamp recipiency
+pernum          byte    %8.0g                 person number in sample unit
+perwt           int     %8.0g                 person weight
+famunit         byte    %8.0g      FAMUNIT    family unit membership
+famsize         byte    %8.0g      FAMSIZE    number of own family members in household
+subfam          byte    %8.0g      SUBFAM     subfamily membership
+sftype          byte    %8.0g      SFTYPE     subfamily type
+sfrelate        byte    %8.0g      SFRELATE   relationship within subfamily
+nchild          byte    %8.0g      NCHILD     number of own children in the household
+nchlt5          byte    %8.0g      NCHLT5     number of own children under age 5 in household
+eldch           byte    %8.0g      ELDCH      age of eldest own child in household
+yngch           byte    %8.0g      YNGCH      age of youngest own child in household
+relate          byte    %8.0g      RELATE     relationship to household head [general version]
+related         int     %8.0g      RELATED    relationship to household head [detailed version]
+sex             byte    %8.0g      SEX        sex
+age             byte    %8.0g      AGE        age
+marst           byte    %8.0g      MARST      marital status
+race            byte    %8.0g      RACE       race [general version]
+raced           int     %8.0g      RACED      race [detailed version]
+hispan          byte    %8.0g      HISPAN     hispanic origin [general version]
+hispand         int     %8.0g      HISPAND    hispanic origin [detailed version]
+citizen         byte    %8.0g      CITIZEN    citizenship status
+educ            byte    %8.0g      EDUC       educational attainment [general version]
+educd           int     %8.0g      EDUCD      educational attainment [detailed version]
+gradeatt        byte    %8.0g      GRADEATT   grade level attending [general version]
+gradeattd       byte    %8.0g      GRADEATTD
+                                              grade level attending [detailed version]
+empstat         byte    %8.0g      EMPSTAT    employment status [general version]
+empstatd        byte    %8.0g      EMPSTATD   employment status [detailed version]
+labforce        byte    %8.0g      LABFORCE   labor force status
+classwkr        byte    %8.0g      CLASSWKR   class of worker [general version]
+classwkrd       byte    %8.0g      CLASSWKRD
+                                              class of worker [detailed version]
+wkswork1        byte    %8.0g                 weeks worked last year
+wkswork2        byte    %8.0g      WKSWORK2   weeks worked last year, intervalled
+uhrswork        byte    %8.0g      UHRSWORK   usual hours worked per week
+inctot          long    %12.0g                total personal income
+ftotinc         long    %12.0g                total family income
+incwage         long    %12.0g                wage and salary income
+incearn         long    %12.0g                total personal earned income
+poverty         int     %8.0g                 poverty status
+disabwrk        byte    %8.0g      DISABWRK   work disability
+vetdisab        byte    %8.0g      VETDISAB   va service-connected disability rating
+diffrem         byte    %8.0g      DIFFREM    cognitive difficulty
+diffphys        byte    %8.0g      DIFFPHYS   ambulatory difficulty
+diffmob         byte    %8.0g      DIFFMOB    independent living difficulty
+diffcare        byte    %8.0g      DIFFCARE   self-care difficulty
+diffsens        byte    %8.0g      DIFFSENS   vision or hearing difficulty
+diffeye         byte    %8.0g      DIFFEYE    vision difficulty
+diffhear        byte    %8.0g      DIFFHEAR   hearing difficulty
+cpiurs          double  %10.0g                CPI-U-RS, All items
+realftotinc     float   %9.0g                 
+tfaminc         float   %9.0g                 Transformed family income
+tfaminc5        byte    %24.0g     tfaminc5   Transformed family income quintiles
+realincwage     float   %9.0g                 
+incwagefam      double  %10.0g                
+tincwagefam     float   %9.0g                 Transformed family salary and wages
+tincwagefam5    byte    %24.0g     tincwagefam5
+                                              Transformed family salary and wage quintiles
+avgwkswork      float   %9.0g                 
+annpersonhrs    float   %9.0g                 Usual hours worked annually, by individual
+annual_famhours double  %10.0g                Annual hours worked by family
+-----------------------------------------------------------------------------------------------------------------------------
+Sorted by: year
+     Note: Dataset has changed since last saved.
+
+. tab empstatd
+
+  employment status [detailed version] |      Freq.     Percent        Cum.
+---------------------------------------+-----------------------------------
+                                   n/a |  9,419,705       19.56       19.56
+                               at work | 21,472,948       44.58       64.14
+                  has job, not working |    526,523        1.09       65.24
+                 armed forces--at work |    157,563        0.33       65.56
+armed forces--not at work but with job |      1,821        0.00       65.57
+                            unemployed |  1,634,644        3.39       68.96
+                    not in labor force | 14,948,913       31.04      100.00
+---------------------------------------+-----------------------------------
+                                 Total | 48,162,117      100.00
+
+. tab empstat
+
+ employment status |
+ [general version] |      Freq.     Percent        Cum.
+-------------------+-----------------------------------
+               n/a |  9,419,705       19.56       19.56
+          employed | 22,158,855       46.01       65.57
+        unemployed |  1,634,644        3.39       68.96
+not in labor force | 14,948,913       31.04      100.00
+-------------------+-----------------------------------
+             Total | 48,162,117      100.00
+
+. gtab empstatd
+command gtab is unrecognized
+r(199);
+
+. tab empstatd if year == 2018
+
+  employment status [detailed version] |      Freq.     Percent        Cum.
+---------------------------------------+-----------------------------------
+                                   n/a |    571,858       17.79       17.79
+                               at work |  1,468,287       45.68       63.47
+                  has job, not working |     30,080        0.94       64.40
+                 armed forces--at work |     10,634        0.33       64.73
+armed forces--not at work but with job |         91        0.00       64.74
+                            unemployed |     71,798        2.23       66.97
+                    not in labor force |  1,061,791       33.03      100.00
+---------------------------------------+-----------------------------------
+                                 Total |  3,214,539      100.00
+
+. gstats sum annpersonhrs if age>16 & age<=65
+
+          Usual hours worked annually, by individual         
+-------------------------------------------------------------
+      Percentiles      Smallest                              
+  1%            0             0                              
+  5%            0             0                              
+ 10%            0             0      Obs           30,558,511
+ 25%          140             0      Sum of Wgt.   30,558,511
+                                                             
+ 50%         1785                    Mean            1384.814
+                        Largest      Std. Dev.       1030.576
+ 75%         2040          5049                              
+ 90%         2550          5049      Variance         1062086
+ 95%         2805          5049      Skewness       -.0614455
+ 99%         3570          5049      Kurtosis        2.001084
+
+. gstats annual_famhours if age>16 & age<=65
+Unknown stat annual_famhours. See help gstats or gstats dir.
+r(198);
+
+. *average hours worked per week, by individual
+
+. gen avgwkswork = wkswork2
+variable avgwkswork already defined
+r(110);
+
+. recode avgwkswork (0=0) (1= 7) (2 = 20) (3 = 33) (4 = 43.5) (5=48.5) (6=51)
+(avgwkswork: 0 changes made)
+
+. 
+. *annual hours worked per person, which is usual hours worked * avg weeks worked
+
+. gen annpersonhrs = uhrswork * avgwkswork 
+variable annpersonhrs already defined
+r(110);
+
+. label var annpersonhrs "Usual hours worked annually, by individual"
+
+. 
+. *annual hours worked by family
+
+. gegen annual_famhours = total(annpersonhrs), by(year serial famsize)
+variable annual_famhours already defined
+r(110);
+
+. label var annual_famhours "Annual hours worked by family"
+
+. gstats sum annual_famhours if age>16 & age<=65
+
+                Annual hours worked by family                
+-------------------------------------------------------------
+      Percentiles      Smallest                              
+  1%            0             0                              
+  5%            0             0                              
+ 10%          112             0      Obs           30,558,511
+ 25%         2040             0      Sum of Wgt.   30,558,511
+                                                             
+ 50%         2958                    Mean            3055.086
+                        Largest      Std. Dev.        1931.52
+ 75%         4182         33660                              
+ 90%         5355         33660      Variance         3730771
+ 95%         6176         33660      Skewness        .6028237
+ 99%         8364         33660      Kurtosis        4.735834
+
+. bysort year: gstats sum annual_famhours if age>16 & age<=65
+gstats may not be combined with by
+r(190);
+
+. bysort year: sum annual_famhours if age>16 & age<=65
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2000
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    235,992    3336.655    1932.655          0      31255
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2001
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    753,455    3233.326    1824.386          0      20196
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2002
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    679,669    3200.965    1839.191          0    24385.5
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2003
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    756,629    3159.512    1839.458          0      22124
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2004
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    755,033    3148.221    1815.965          0      22185
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2005
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |  1,820,296    3154.263    1843.525          0      23560
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2006
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |  1,894,644    3108.238    1902.124          0      28764
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2007
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |  1,912,701    3112.504    1897.709          0      26335
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2008
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |  1,915,817    3168.937     1906.76          0      25704
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2009
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |  1,933,165    3050.758    1884.066          0      27006
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2010
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |  1,952,592    2962.146    1892.397          0    24766.5
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2011
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |  1,988,829    2841.137    1928.397          0      21360
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2012
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |  1,987,929    2892.966    1935.986          0      32130
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2013
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |  1,997,604    2946.872    1948.426          0      33660
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2014
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |  1,985,653    2982.722     1962.32          0      25110
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2015
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |  1,989,081    3028.266    1988.947          0      32544
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2016
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |  1,985,113     3068.32    1997.322          0      32535
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2017
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |  2,004,862    3102.117    2008.141          0      29271
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2018
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |  2,009,447    3140.621    2023.574          0      30156
+
+
+. bysort year: sum annual_famhours if age>16 & age<=65 & tincwagefam==1
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2000
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |          0
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2001
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |          0
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2002
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |          0
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2003
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |          0
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2004
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |          0
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2005
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |          0
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2006
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |          0
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2007
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |          0
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2008
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |          0
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2009
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |          0
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2010
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |          0
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2011
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |          0
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2012
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |          0
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2013
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |          0
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2014
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |          0
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2015
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |          0
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2016
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |          0
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2017
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |          0
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2018
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |          0
+
+
+. bysort year: sum annual_famhours if age>16 & age<=65 & tincwagefam5==1
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2000
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |     24,068     821.121    1426.741          0      11016
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2001
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |     84,328    781.1594    1394.066          0      15147
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2002
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |     76,418    759.6582    1369.488          0      13770
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2003
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |     88,930     727.093    1331.887          0      17850
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2004
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |     89,880    734.9106    1335.937          0      13005
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2005
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    220,995    717.5481    1321.999          0      17848
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2006
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    266,925    643.7384    1237.864          0      20247
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2007
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    265,532    620.9145    1220.104          0      22389
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2008
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    262,128    600.2216    1194.877          0      18360
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2009
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    279,861    543.7731    1128.011          0      13566
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2010
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    305,312    500.8161    1075.985          0      15810
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2011
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    370,634    431.3244     990.814          0      14178
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2012
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    358,747    434.7545    999.8638          0      23715
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2013
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    343,999    435.3588    990.4928          0      18360
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2014
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    336,889    440.2452     995.661          0      20196
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2015
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    330,742    444.6269    1008.507          0      15147
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2016
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    321,863     447.254    1004.987          0      16779
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2017
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    316,945    447.0162    1008.538          0      24990
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2018
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    318,367    463.1903    1016.588          0      20400
+
+
+. bysort year: sum annual_famhours if age>16 & age<=65 & tfaminc5==1
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2000
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |     31,603    1681.882    1685.578          0      20400
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2001
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    101,102    1564.196     1537.89          0      17136
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2002
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |     90,900    1536.853    1517.604          0      13260
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2003
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    104,421    1497.761     1516.83          0      19023
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2004
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    107,374    1520.656    1512.359          0      15300
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2005
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    267,864    1526.326    1526.427          0      20942
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2006
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    269,053    1563.407    1569.654          0      24618
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2007
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    264,522    1559.654    1551.668          0      24192
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2008
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    272,227    1638.638    1603.493          0      25704
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2009
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    290,989    1534.126    1542.594          0      20630
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2010
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    331,265    1481.229    1528.561          0    24766.5
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2011
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    356,327    1438.103     1490.64          0    18403.5
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2012
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    348,426    1476.065    1516.289          0      25680
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2013
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    347,280    1531.954    1561.831          0      21420
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2014
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    338,848    1547.102    1583.941          0      25110
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2015
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    319,770    1580.927    1631.966          0      31474
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2016
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    310,473    1588.542    1620.778          0      32535
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2017
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    302,296    1597.071    1635.092          0      29271
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2018
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    295,591    1628.416    1665.023          0      26505
+
+
+. bysort year: sum annual_famhours if tfaminc5==1
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2000
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |     58,266    1445.003     1591.23          0      20400
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2001
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    187,813    1357.066    1472.776          0      17136
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2002
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    167,260    1335.804    1448.352          0      13260
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2003
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    191,329    1306.814    1443.057          0      19023
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2004
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    195,521    1329.558    1448.583          0      15300
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2005
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    490,904    1340.167    1458.846          0      20942
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2006
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    489,470    1373.598    1495.473          0      24618
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2007
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    480,969    1376.237    1484.095          0      24192
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2008
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    493,281    1441.722    1530.864          0      25704
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2009
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    518,276    1366.707    1475.755          0      20630
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2010
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    575,039    1336.527    1462.205          0    24766.5
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2011
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    622,604    1295.511    1430.138          0    18403.5
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2012
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    606,453     1329.96    1454.724          0      25680
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2013
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    599,366    1379.391    1493.337          0      21420
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2014
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    586,654    1390.967    1512.459          0      25110
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2015
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    554,124    1417.416    1542.874          0      31474
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2016
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    540,415     1415.22    1540.887          0      32535
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2017
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    528,733    1419.898    1556.422          0      29271
+
+-----------------------------------------------------------------------------------------------------------------------------
+-> year = 2018
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+annual_fam~s |    520,681    1432.856    1581.174          0      26505
+
+
+.  gstats sum tincwagefam
+
+             Transformed family salary and wages             
+-------------------------------------------------------------
+      Percentiles      Smallest                              
+  1%            0             0                              
+  5%            0             0                              
+ 10%            0             0      Obs           48,162,117
+ 25%     5481.521             0      Sum of Wgt.   48,162,117
+                                                             
+ 50%     28542.65                    Mean            40055.29
+                        Largest      Std. Dev.       49263.01
+ 75%     55833.76       1739392                              
+ 90%     89453.55       1919415      Variance        2.43e+09
+ 95%     119935.1       1919415      Skewness        3.408496
+ 99%       245602       1919415      Kurtosis        24.63875
+
+. gstats sum tfaminc
+
+                  Transformed family income                  
+-------------------------------------------------------------
+      Percentiles      Smallest                              
+  1%            0     -35308.84                              
+  5%     5884.696     -35308.84                              
+ 10%        10455     -33065.05      Obs           46,484,362
+ 25%     21203.68     -33065.05      Sum of Wgt.   46,484,362
+                                                             
+ 50%     39576.57                    Mean            52883.23
+                        Largest      Std. Dev.       54712.68
+ 75%     65618.98       1824336                              
+ 90%     102952.8       1824336      Variance        2.99e+09
+ 95%     141592.5       1848603      Skewness        3.885136
+ 99%     286661.1       1848603      Kurtosis        30.14801
+
+. hist tincwagefam
+(bin=76, start=0, width=25255.461)
+
