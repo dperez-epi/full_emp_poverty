@@ -214,24 +214,31 @@ label var annual_famhours "Annual hours worked by family"
 gen hrwage0 = realincwage / (annpersonhrs)
 label var hrwage0 "Implied hourly wages"
 
-
 **************************************************************
 * 4.1 Descriptive statistics
 **************************************************************
 
 hashsort year sample serial pernum
 
-list year serial famsize pernum tfaminc incwage realincwage tincwagefam hrwage0 uhrswork weeklyfamhours avgwkswork annpersonhrs annual_famhours in 1/20, table
-
+list year serial famsize pernum tfaminc incwage tincwagefam realincwage hrwage0 annpersonhrs uhrswork avgwkswork weeklyfamhours  annual_famhours in 1/30, table
 
 stop 
-
+*** collapse weekly hours worked to mean, by year and salary + wage quintiles
 preserve
 gcollapse (mean) meanhourswkly = weeklyfamhours [pw=perwt], by(year tincwagefam5)
 keep if tincwagefam5!=.
 reshape wide meanhourswkly, i(year) j(tincwagefam5)
 list
-export excel "weekly_hours.xls", firstrow(variable) replace
+export excel "weeklyhours_quintiles.xls", firstrow(variable) replace
+restore
+
+*** collapse hourly wages to mean, by year and salary + wage quintiles
+preserve
+gcollapse (mean) meanhrwage = hrwage0 [pw=perwt], by(year tincwagefam5)
+keep if tincwagefam5!=.
+reshape wide meanhrwage, i(year) j(tincwagefam5)
+list
+export excel "hrwages_quintiles.xls", firstrow(variable) replace
 restore
 
 
