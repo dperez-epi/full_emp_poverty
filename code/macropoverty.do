@@ -1,24 +1,28 @@
 /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 	Author:		Daniel Perez
-	Title: 		povwages.do
+	Title: 		macropoverty.do
 	Date: 		01/10/2020
-	Created by: 	Daniel Perez
+	Created by: Daniel Perez
 	Purpose:	Use ACS data to construct income quintiles for US 
-			households
+				households
 
 	Outline:
 	
 	1. Preamble
 	2. File Preparation
-	3. Analysis
-		3.0 Generate income and rank by quintiles
-		3.1 Calculate annual hours worked by family
-		3.2 Descriptive stats
+	3. Data Processing
+		3.1 Measuring income (from all sources) by family + quintiles
+		3.2 Measuring income (from wages and salary) by family + quintiles
+		3.3 Calculating hours and weeks worked per year, and usual hours per week
+			by family
+		3.4 Calculating implied hourly wages from wages, salary and hours worked
+	4. Analysis
+		4.1 Descriptive statistics
 			
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
 ****************************************
-*1. Preamble
+* 1. Preamble
 ****************************************
 
 clear all
@@ -31,9 +35,9 @@ capture log using macropoverty.txt, text replace
 //ssc install gtools
 //ssc install egenmore
 
-****************************************
-*2. Create directories for data and code, load ACS data set
-****************************************
+**************************************************************
+* 2. Create directories for data and code, load ACS data set
+**************************************************************
 
 global dir = "/projects/dperez/macropoverty"
 
@@ -54,29 +58,30 @@ use acs_extract.dta, clear
 *merge cpi data to ACS
 merge m:1 year using `cpi', keep(3) nogenerate
 
-**************************************************************
-*3.0 Generate family income from all sources, and rank by quintiles
-**************************************************************
-
-*get rid of missing values
-mvdecode ftotinc, mv(9999999)
-
 *adjust wages for 2018 values
 sum year
 local maxyear =`r(max)'
 sum cpiurs if year ==`maxyear'
 local basevalue =`r(mean)'
 
+**************************************************************
+* 3.1 Measuring income (from all sources) by family + quintiles
+**************************************************************
+
+*get rid of missing values
+mvdecode ftotinc, mv(9999999)
+
 *generate total family income in real wages
 gen realftotinc = ftotinc * [`basevalue'/cpiurs]
+label var realftotinc "Total family income in real 2018 dollars"
 
 *transform our family income variable
 gen tfaminc = (realftotinc / sqrt(famsize))
-label var tfaminc "Transformed family income"
+label var tfaminc "Total family income transformed"
 
 *create quintiles based off transformed family income (tfaminc)
 gegen tfaminc5 = xtile(tfaminc) [pw=perwt], nq(5)
-label var tfaminc5 "Transformed family income quintiles"
+label var tfaminc5 "Quintiles of transformed total family income"
 
 #delimit;
 label def tfaminc5
@@ -90,7 +95,7 @@ label def tfaminc5
 lab val tfaminc5 tfaminc5
 
 **************************************************************
-*3.1 Generate family income from salary and wages, and rank by quintiles
+* 3.2 Measuring income (from wages and salary) by family + quintiles
 **************************************************************
 
 *remove missing values from wage and salary
@@ -98,12 +103,14 @@ mvdecode incwage, mv(999999 999998)
 
 *adjust wage and salary to real 2018 dollars
 gen realincwage = incwage * [`basevalue'/cpiurs]
+label var realincwage "wages and salary income in real 2018 dollars"
 
 *sum real wages within families
 gegen incwagefam = total(realincwage), by(year serial famsize)
+label var incwagefam "income from salary and wages summed over family size"
+
 *transform real wages
 gen tincwagefam = (incwagefam / sqrt(famsize))
-
 label var tincwagefam "Transformed family salary and wages"
 
 *create quintiles for family salary and wage incomes
@@ -159,15 +166,13 @@ should we restrict our sample somehow? What does our data look like?
  90%     102952.8       1824336      Variance        2.99e+09
  95%     141592.5       1848603      Skewness        3.885136
  99%     286661.1       1848603      Kurtosis        30.14801
-
-. 
-
 */
-****************************************
-*3.2 Calculate annual hours worked by family
-****************************************
 
-/***********************************
+**************************************************************
+* 3.3 Calculating hours and weeks worked per year, and usual hours per week by family
+**************************************************************
+
+/************************************************
 We take the mid-point of each interval
 *
 *      weeks |
@@ -184,11 +189,15 @@ We take the mid-point of each interval
 *50-52 weeks | 17,784,439       36.93      100.00
 *------------+-----------------------------------
 *      Total | 48,162,117      100.00
-***********************************/
+************************************************/
 
-*average hours worked per week, by individual
+*average weeks worked per year, by individual
 gen avgwkswork = wkswork2
 recode avgwkswork (0=0) (1= 7) (2 = 20) (3 = 33) (4 = 43.5) (5=48.5) (6=51)
+
+*Usual hours worked per week, by family
+gegen weeklyfamhours = total(uhrswork), by(year serial famsize)
+label var weeklyfamhours "Usual hours worked per week, by family"
 
 *annual hours worked per person, which is usual hours worked * avg weeks worked
 gen annpersonhrs = uhrswork * avgwkswork 
@@ -198,12 +207,33 @@ label var annpersonhrs "Usual hours worked annually, by individual"
 gegen annual_famhours = total(annpersonhrs), by(year serial famsize)
 label var annual_famhours "Annual hours worked by family"
 
-****************************************
-*3.2 Descriptive stats
-****************************************
+/**************************************************************
+3.4 Calculating implied hourly wages from wages, salary and hours worked
+**************************************************************/
+
+gen hrwage0 = realincwage / (annpersonhrs)
+label var hrwage0 "Implied hourly wages"
+
+
+**************************************************************
+* 4.1 Descriptive statistics
+**************************************************************
 
 hashsort year sample serial pernum
-list year serial famsize pernum tfaminc incwage tincwagefam uhrswork avgwkswork annpersonhrs annual_famhours in 1/20, table
+
+list year serial famsize pernum tfaminc incwage realincwage tincwagefam hrwage0 uhrswork weeklyfamhours avgwkswork annpersonhrs annual_famhours in 1/20, table
+
+
+stop 
+
+preserve
+gcollapse (mean) meanhourswkly = weeklyfamhours [pw=perwt], by(year tincwagefam5)
+keep if tincwagefam5!=.
+reshape wide meanhourswkly, i(year) j(tincwagefam5)
+list
+export excel "weekly_hours.xls", firstrow(variable) replace
+restore
+
 
 *Transformed family income by quintile
 bysort tincwagefam5: sum tincwagefam
@@ -221,7 +251,7 @@ bysort year: sum tincwagefam if tincwagefam5==1
 
 preserve
 gcollapse (mean) meanwages = tincwagefam [pw=perwt], by(year tincwagefam5)
-keep if tincwagefam5!="." 
+keep if tincwagefam5!=.
 reshape wide meanwages, i(year) j(tincwagefam5)
 list
 export excel "meanwages_bottom20.xls", firstrow(variables) replace
