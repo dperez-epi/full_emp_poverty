@@ -26,9 +26,8 @@
 **************************************************************
 * 1. Preamble
 **************************************************************
-
-clear all
 cap log close
+clear all
 set more off
 
 capture log using macropoverty.txt, text replace
@@ -69,7 +68,7 @@ local basevalue =`r(mean)'
 **************************************************************
 
 *keep if in laborforce
-keep if labforce==2
+*keep if labforce==2
 
 *Delineate poverty threshold using poverty variable
 do acs_povcut.do
@@ -79,6 +78,9 @@ do agebins.do
 
 *create wbhao variable
 do raceethnicity.do
+
+*create EPI-style education variable
+do education.do
 
 **************************************************************
 * 3.2 Measuring income (from wages and salary) by family + quintiles
@@ -133,7 +135,7 @@ gen annualhours = uhrswork * avgwkswork
 label var annualhours "Usual hours worked annually, by individual"
 
 *annual hours worked by family
-gegen annual_famhours = total(annualhours), by(year serial famunit) missing
+gegen annual_famhours = total(annualhours), by(year serial famsize) missing
 label var annual_famhours "Annual hours worked by family"
 
 /**************************************************************
@@ -151,6 +153,8 @@ label var hrwage0 "Implied hourly wages from wages and salary excluding hours to
 replace hrwage0 = . if hrwage0 < .98
 replace hrwage0 = . if hrwage0 > 196.08
 
+gen hrwage1 = rf_incwage / (annual_famhours)
+label var hrwage1 "Implied hourly family wages from wages and salary"
 
 do exports.do
 

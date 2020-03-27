@@ -4,20 +4,16 @@
 . //ssc install gtools
 . //ssc install egenmore
 . 
-. ****************************************
-. *2. Create directories for data and code, load ACS data set
-. ****************************************
+. **************************************************************
+. * 2. Create directories for data and code, load ACS data set
+. **************************************************************
 . 
 . global dir = "/projects/dperez/macropoverty"
 
 . 
-. global data = "${dir}/data"
+. global data = "${dir}/data/"
 
-. global code = "${dir}/code"
-
-. 
-. cd ${data}
-/projects/dperez/macropoverty/data
+. global code = "${dir}/code/"
 
 . 
 . * load CPI data
@@ -28,13 +24,14 @@
 . tempfile cpi 
 
 . save `cpi' 
-file /tmp/St31707.000008 saved
+file /tmp/St25711.000001 saved
 
 . 
 . *load ACS dataset
-. use acs_extract.dta, clear
+. use ${data}acs_extract.dta, clear
 
 . 
+. *merge cpi data to ACS
 . merge m:1 year using `cpi', keep(3) nogenerate
 
     Result                           # of obs.
@@ -42,14 +39,6 @@ file /tmp/St31707.000008 saved
     not matched                             0
     matched                        48,162,117  
     -----------------------------------------
-
-. ****************************************
-. *3.0 Generate income and rank by quintiles
-. ****************************************
-. 
-. *get rid of missing values
-. mvdecode ftotinc, mv(9999999)
-     ftotinc: 1677755 missing values generated
 
 . 
 . *adjust wages for 2018 values
@@ -69,127 +58,860 @@ file /tmp/St31707.000008 saved
 
 . local basevalue =`r(mean)'
 
-. gen realftotinc = ftotinc * [`basevalue'/cpiurs]
-(1,677,755 missing values generated)
+. 
+. **************************************************************
+. * 3.1 Universe and variable creation
+. **************************************************************
+. 
+. *keep if in laborforce
+. keep if labforce==2
+(24,368,618 observations deleted)
 
 . 
-. *transformed family income
-. 
-. gen tfaminc = (realftotinc / sqrt(famsize))
-(1,677,755 missing values generated)
+. *Delineate poverty threshold using poverty variable
+. do acs_povcut.do
 
-. label var tfaminc "Transformed family income"
+. /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+> Author:         Daniel Perez
+> Title:          acs_povcut.do
+> Date:           03-18-2020
+> Created by:     Daniel Perez
+> Purpose:        Create poverty cut for ACS analysis
+> ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
+. 
+. gen byte povcut = .
+(23,793,499 missing values generated)
+
+. replace povcut = 1 if poverty < 100
+(1,933,783 real changes made)
+
+. replace povcut = 0 if poverty >= 100
+(21,859,716 real changes made)
 
 . 
-. stop
-command stop is unrecognized
-r(199);
+. lab var povcut "Poverty threshold"
+
+. label def povcut 0 "Family income above poverty threshold" 1 "Family income below poverty threshold"
+
+. label value povcut povcut
+
+. 
+end of do-file
+
+. 
+. *intervalled age variable
+. do agebins.do
+
+. /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+> Author:         Daniel Perez
+> Title:          agebins.do
+> Date:           03-19-2020
+> Created by:     Daniel Perez
+> Purpose:        Create age bins for working age population
+> ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
+. 
+. gen ageb = age if age>17 & age<65
+(1,686,064 missing values generated)
+
+. recode ageb (18/24 = 1) (25/34 = 2) (35/44 = 3) (45/54 = 4) (55/64 = 5)
+(ageb: 22107435 changes made)
+
+. 
+. lab var ageb "Age (intervalled)"
+
+. label def ageb 1 "18–24" 2 "25–34" 3 "35–44" 4 "45–54" 5 "55–64"
+
+. label value ageb ageb
+
+. 
+end of do-file
+
+. 
+. *create wbhao variable
+. do raceethnicity.do
+
+. /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+> Author:         Daniel Perez
+> Title:          agebins.do
+> Date:           03-22-2020
+> Created by:     Daniel Perez
+> Purpose:        Create simplified race/ethnicity variable
+> ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
+. 
+. gen wbhao = .
+(23,793,499 missing values generated)
+
+. 
+. replace wbhao = 1 if race==1
+(18,819,345 real changes made)
+
+. replace wbhao = 2 if race==2
+(2,209,048 real changes made)
+
+. replace wbhao = 4 if race==4 | race==5 | race==6
+(1,191,754 real changes made)
+
+. replace wbhao = 5 if race==3 | racesing==7 | race==8 | race==9
+(661,164 real changes made)
+
+. *hispanic
+. replace wbhao = 3 if hispan!=0
+(2,918,134 real changes made)
+
+. 
+. lab var wbhao "Race/ethnicity, including Asian"
+
+. #delimit ;
+delimiter now ;
+. lab define wbhao
+> 1 "White"
+> 2 "Black"
+> 3 "Hispanic"
+> 4 "Asian"
+> 5 "Other";
+
+. #delimit cr
+delimiter now cr
+. lab val wbhao wbhao
+
+. 
+end of do-file
+
+. 
+. *create EPI-style education variable
+. do education.do
+
+. /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+> Author:         Daniel Perez
+> Title:          education.do
+> Date:           03-25-2020
+> Created by:     Daniel Perez
+> Purpose:        Create simplified educational attainment variable
+> 
+> ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
+. 
+. rename educ oldeduc
+
+. 
+. gen educ = .
+(23,793,499 missing values generated)
+
+. *Less than HS
+. replace educ = 1 if educd<=61
+(2,442,217 real changes made)
+
+. *HS graduate/GED or equivalent
+. replace educ = 2 if educd>=62 & educd<=64
+(6,160,334 real changes made)
+
+. *Some college
+. replace educ = 3 if educd>=65 & educd<=90
+(7,548,560 real changes made)
+
+. *4 years of college / Bachelors
+. replace educ = 4 if educd==100 | educd==101
+(4,778,433 real changes made)
+
+. *5+ years of college, and/or professional degree
+. replace educ = 5 if educd>=110 & educd<=116
+(2,863,955 real changes made)
+
+. 
+. lab var educ "Education level"
+
+. #delimit ;
+delimiter now ;
+. lab define educ
+> 1 "Less than high school"
+> 2 "High school"
+> 3 "Some college"
+> 4 "College"
+> 5 "Advanced"
+> ;
+
+. #delimit cr
+delimiter now cr
+. lab val educ educ
+
+. 
+. notes educ: 2000-2018 IPUMS ACS: derived from educd
+
+. 
+. 
+end of do-file
+
+. 
+. **************************************************************
+. * 3.2 Measuring income (from wages and salary) by family + quintiles
+. **************************************************************
+. *remove missing values from wage and salary
+. mvdecode incwage, mv(999999) 
+
+. 
+. *adjust wage and salary to real 2018 dollars
+. gen r_incwage = incwage * [`basevalue'/cpiurs]
+
+. label var r_incwage "wages and salary income in real 2018 dollars"
+
+. 
+. *sum real wages within families
+. gegen rf_incwage = total(r_incwage), by(year serial famunit) missing
+
+. label var rf_incwage "income from salary and wages summed over family size"
+
+. 
+. *transform real wages
+. gen rft_incwage = (rf_incwage / sqrt(famsize))
+
+. label var rft_incwage "Transformed family salary and wages"
+
+. 
+. *create quintiles using real transformed family salary and wage incomes
+. gegen rft_incwage5 = xtile(rft_incwage) [pw=perwt], nq(5)
+warning: type ignored with gegen function xtile
+
+. label var rft_incwage5 "Transformed family salary and wage quintiles"
+
+. 
+. *label our quintiles
+. #delimit;
+delimiter now ;
+. label def rft_incwage5
+> 1 "First quintile 0–20%"
+> 2 "Second quintile 20–40%"
+> 3 "Third quintile 40–60%"
+> 4 "Fourth quintile 60–80%"
+> 5 "Fifth quintile 80–100%"
+> ;
+
+. #delimit cr
+delimiter now cr
+. lab val rft_incwage5 rft_incwage5
+
+. 
+. 
+. **************************************************************
+. * 3.3 Calculating hours and weeks worked per year, and usual hours per week by family
+. **************************************************************
+. 
+. *average weeks worked per year, by individuals (using midpoint of intervaled variable)
+. gen avgwkswork = wkswork2
+
+. mvdecode avgwkswork, mv(0)
+  avgwkswork: 682758 missing values generated
+
+. recode avgwkswork (1 = 7) (2 = 20) (3 = 33) (4 = 43.5) (5=48.5) (6=51)
+(avgwkswork: 23110741 changes made)
+
+. 
+. *Usual hours worked per week, by family
+. gegen weeklyfamhours = total(uhrswork), by(year serial famunit) missing
+
+. label var weeklyfamhours "Usual hours worked per week, by family"
+
+. 
+. *annual hours worked per person, which is usual hours worked * avg weeks worked
+. gen annualhours = uhrswork * avgwkswork
+(682,758 missing values generated)
+
+. label var annualhours "Usual hours worked annually, by individual"
+
+. 
+. *annual hours worked by family
+. gegen annual_famhours = total(annualhours), by(year serial famsize) missing
+
+. label var annual_famhours "Annual hours worked by family"
+
+. 
+. /**************************************************************
+> 3.4 Calculating implied hourly wages from wages, salary and hours worked
+> 
+> https://www.epi.org/data/methodology/
+> https://irle.berkeley.edu/files/2014/The-Impact-of-Oakland-data-and-methods.pdf
+> https://www.brookings.edu/wp-content/uploads/2019/11/201911_Brookings-Metro_low-wage-workforce_Ross-Bateman_TECHNICAL-APPENDIX.pdf
+> 
+> **************************************************************/
+. 
+. gen hrwage0 = r_incwage / (annualhours)
+(682,758 missing values generated)
+
+. label var hrwage0 "Implied hourly wages from wages and salary excluding hours topcode"
+
+. *exclude outliers per EPI methodology
+. replace hrwage0 = . if hrwage0 < .98
+(1,432,799 real changes made, 1,432,799 to missing)
+
+. replace hrwage0 = . if hrwage0 > 196.08
+(134,945 real changes made, 134,945 to missing)
+
+. 
+. gen hrwage1 = rf_incwage / (annual_famhours)
+(234,241 missing values generated)
+
+. label var hrwage1 "Implied hourly family wages from wages and salary"
+
+. 
+. do exports.do
+
+. **************************************************************
+. * 4.0 Analysis
+. **************************************************************
+. /*
+> browse year serial famsize famunit pernum age incwage r_incwage ///
+>  rf_incwage rft_incwage rft_incwage5 uhrswork hrwage0 annualhours avgwkswork ///
+>  weeklyfamhours annual_famhours povcut wbhao educ
+> */
+. **************************************************************
+. * all employable people versus those in poverty
+. **************************************************************
+. 
+. *Annual hours worked by all versus those in poverty
+. preserve
+
+.         tempfile alldata
+
+.         save `alldata'
+file /tmp/St25711.000003 saved
+
+.         use `alldata', clear
+
+.         gcollapse (mean) avghrall = annualhours [pw=perwt], by(year)
+
+.         tempfile allcoll
+
+.         save `allcoll'
+file /tmp/St25711.000004 saved
+
+.         use `alldata', clear
+
+.         keep if povcut==1
+(21,859,716 observations deleted)
+
+.         gcollapse (mean) avghrpov = annualhours [pw=perwt], by(year)
+
+.         *merge collapsed hours for all v. those in poverty
+.         merge 1:1 year using `allcoll', assert(3) nogenerate
+(label YEAR already defined)
+
+    Result                           # of obs.
+    -----------------------------------------
+    not matched                             0
+    matched                                19  
+    -----------------------------------------
+
+.         export excel "${data}emp_hours.xls", firstrow(variable) replace
+file /projects/dperez/macropoverty/data/emp_hours.xls saved
+
+. restore
+
+. 
+. *Annual hours (per family) worked by all versus those in poverty
+. preserve
+
+.         tempfile alldata
+
+.         save `alldata'
+file /tmp/St25711.000006 saved
+
+.         use `alldata', clear
+
+.         gcollapse (mean) avghrall = annual_famhours [pw=perwt], by(year)
+
+.         tempfile allcoll
+
+.         save `allcoll'
+file /tmp/St25711.000007 saved
+
+.         use `alldata', clear
+
+.         keep if povcut==1
+(21,859,716 observations deleted)
+
+.         gcollapse (mean) avghrpov = annual_famhours [pw=perwt], by(year)
+
+.         *merge collapsed hours for all v. those in poverty
+.         merge 1:1 year using `allcoll', assert(3) nogenerate
+(label YEAR already defined)
+
+    Result                           # of obs.
+    -----------------------------------------
+    not matched                             0
+    matched                                19  
+    -----------------------------------------
+
+.         export excel "${data}emp_famhours.xls", firstrow(variable) replace
+file /projects/dperez/macropoverty/data/emp_famhours.xls saved
+
+. restore
+
+. 
+. *Annual wages for all versus those in poverty
+. preserve
+
+.         tempfile alldata
+
+.         save `alldata'
+file /tmp/St25711.000009 saved
+
+.         use `alldata', clear
+
+.         gcollapse (mean) avgwgsall = hrwage0 [pw=perwt], by(year)
+
+.         tempfile allcoll
+
+.         save `allcoll'
+file /tmp/St25711.00000a saved
+
+.         use `alldata', clear
+
+.         keep if povcut==1
+(21,859,716 observations deleted)
+
+.         gcollapse (mean) avgwgspov = hrwage0 [pw=perwt], by(year)
+
+.         *merge collapsed hours for all v. those in poverty
+.         merge 1:1 year using `allcoll', assert(3) nogenerate
+(label YEAR already defined)
+
+    Result                           # of obs.
+    -----------------------------------------
+    not matched                             0
+    matched                                19  
+    -----------------------------------------
+
+.         export excel "${data}emp_wages.xls", firstrow(variable) replace
+file /projects/dperez/macropoverty/data/emp_wages.xls saved
+
+. restore
+
+. 
+. 
+. 
+. **************************************************************
+. * Bottom fifth vs all hours, incomes, wages
+. **************************************************************
+. 
+. *** Annual hours worked per family, bottom fifth vs all
+. 
+. preserve
+
+.         *save all data
+.         tempfile alldata
+
+.         save `alldata'
+file /tmp/St25711.00000c saved
+
+.         use `alldata', clear
+
+.         *Collapse family hours
+.         gcollapse (mean) avgwgsall = annual_famhours [pw=perwt], by(year)
+
+.         *save collapsed data
+.         tempfile allcoll
+
+.         save `allcoll'
+file /tmp/St25711.00000d saved
+
+.         *use all data to collapse bottom fifth family hours
+.         use `alldata', clear
+
+.         keep if rft_incwage5==1
+(19,102,048 observations deleted)
+
+.         gcollapse (mean) avghours = annual_famhours [pw=perwt], by(year)
+
+.         *merge collapsed hours for all v. those in poverty
+.         merge 1:1 year using `allcoll', assert(3) nogenerate
+(label YEAR already defined)
+
+    Result                           # of obs.
+    -----------------------------------------
+    not matched                             0
+    matched                                19  
+    -----------------------------------------
+
+.         export excel "${data}quint_famhours.xls", firstrow(variable) replace
+file /projects/dperez/macropoverty/data/quint_famhours.xls saved
+
+. restore
+
+. 
+. 
+. *** Implied hourly family wage for bottom fifth vs all
+. 
+. preserve
+
+.         *save all data
+.         tempfile alldata
+
+.         save `alldata'
+file /tmp/St25711.00000f saved
+
+.         use `alldata', clear
+
+.         *Collapse family hours
+.         gcollapse (mean) avgwgsall = hrwage1 [pw=perwt], by(year)
+
+.         *save collapsed data
+.         tempfile allcoll
+
+.         save `allcoll'
+file /tmp/St25711.00000g saved
+
+.         *use all data to collapse bottom fifth family hours
+.         use `alldata', clear
+
+.         keep if rft_incwage5==1
+(19,102,048 observations deleted)
+
+.         gcollapse (mean) avgwgsfifth = hrwage1 [pw=perwt], by(year)
+
+.         *merge collapsed hours for all v. those in poverty
+.         merge 1:1 year using `allcoll', assert(3) nogenerate
+(label YEAR already defined)
+
+    Result                           # of obs.
+    -----------------------------------------
+    not matched                             0
+    matched                                19  
+    -----------------------------------------
+
+.         export excel "${data}quint_famwages.xls", firstrow(variable) replace
+file /projects/dperez/macropoverty/data/quint_famwages.xls saved
+
+. restore
+
+. 
+. *** Implied family incomes for bottom fifth vs all
+. 
+. preserve
+
+.         *save all data
+.         tempfile alldata
+
+.         save `alldata'
+file /tmp/St25711.00000i saved
+
+.         use `alldata', clear
+
+.         *Collapse family hours
+.         gcollapse (mean) avgincall = rf_incwage [pw=perwt], by(year)
+
+.         *save collapsed data
+.         tempfile allcoll
+
+.         save `allcoll'
+file /tmp/St25711.00000j saved
+
+.         *use all data to collapse bottom fifth family hours
+.         use `alldata', clear
+
+.         keep if rft_incwage5==1
+(19,102,048 observations deleted)
+
+.         gcollapse (mean) avgincfifth = rf_incwage [pw=perwt], by(year)
+
+.         *merge collapsed hours for all v. those in poverty
+.         merge 1:1 year using `allcoll', assert(3) nogenerate
+(label YEAR already defined)
+
+    Result                           # of obs.
+    -----------------------------------------
+    not matched                             0
+    matched                                19  
+    -----------------------------------------
+
+.         export excel "${data}quint_faminc.xls", firstrow(variable) replace
+file /projects/dperez/macropoverty/data/quint_faminc.xls saved
+
+. restore
+
+. 
+. 
+. **************************************************************
+. * Age breakdown
+. **************************************************************
+. 
+. 
+. *** Implied incomes for all age bins
+. 
+. preserve
+
+.         *save all data
+.         tempfile alldata
+
+.         save `alldata'
+file /tmp/St25711.00000l saved
+
+.         use `alldata', clear
+
+.         *Collapse hourly wages
+.         gcollapse (mean) avgwageall = hrwage0 [pw=perwt], by(year ageb)
+
+.         keep if age!=.
+(19 observations deleted)
+
+.         decode ageb, gen(agestr)
+
+.         drop ageb
+
+.         reshape wide avgwageall, i(agestr) j(year)
+(note: j = 2000 2001 2002 2003 2004 2005 2006 2007 2008 2009 2010 2011 2012 2013 2014 2015 2016 2017 2018)
+
+Data                               long   ->   wide
+-----------------------------------------------------------------------------
+Number of obs.                       95   ->       5
+Number of variables                   3   ->      20
+j variable (19 values)             year   ->   (dropped)
+xij variables:
+                             avgwageall   ->   avgwageall2000 avgwageall2001 ... avgwageall2018
+-----------------------------------------------------------------------------
+
+.         *save collapsed data
+.         tempfile allcoll
+
+.         save `allcoll'
+file /tmp/St25711.00000m saved
+
+.         *use all data to collapse hr wages by age bins in poverty
+.         use `alldata', clear
+
+.         keep if povcut==1
+(21,859,716 observations deleted)
+
+.         gcollapse (mean) avgwagepov = hrwage0 [pw=perwt], by(year ageb)
+
+.         keep if age!=.
+(19 observations deleted)
+
+.         decode ageb, gen(agestr)
+
+.         drop ageb
+
+.         reshape wide avgwagepov, i(agestr) j(year)
+(note: j = 2000 2001 2002 2003 2004 2005 2006 2007 2008 2009 2010 2011 2012 2013 2014 2015 2016 2017 2018)
+
+Data                               long   ->   wide
+-----------------------------------------------------------------------------
+Number of obs.                       95   ->       5
+Number of variables                   3   ->      20
+j variable (19 values)             year   ->   (dropped)
+xij variables:
+                             avgwagepov   ->   avgwagepov2000 avgwagepov2001 ... avgwagepov2018
+-----------------------------------------------------------------------------
+
+.         *merge collapsed hours for all v. those in poverty
+.         merge 1:1 agestr using `allcoll', assert(3) nogenerate
+
+    Result                           # of obs.
+    -----------------------------------------
+    not matched                             0
+    matched                                 5  
+    -----------------------------------------
+
+.         export excel "${data}age_hrwage.xls", firstrow(variable) replace
+file /projects/dperez/macropoverty/data/age_hrwage.xls saved
+
+. restore
+
+. 
+. *** annual hours worked by age bin, all versus in poverty
+. 
+. preserve
+
+.         *save all data
+.         tempfile alldata
+
+.         save `alldata'
+file /tmp/St25711.00000o saved
+
+.         use `alldata', clear
+
+.         *Collapse hourly wages
+.         gcollapse (mean) avghrsall = annualhours [pw=perwt], by(year ageb)
+
+.         keep if ageb!=.
+(19 observations deleted)
+
+.         decode ageb, gen(agestr)
+
+.         drop ageb
+
+.         reshape wide avghrsall, i(agestr) j(year)
+(note: j = 2000 2001 2002 2003 2004 2005 2006 2007 2008 2009 2010 2011 2012 2013 2014 2015 2016 2017 2018)
+
+Data                               long   ->   wide
+-----------------------------------------------------------------------------
+Number of obs.                       95   ->       5
+Number of variables                   3   ->      20
+j variable (19 values)             year   ->   (dropped)
+xij variables:
+                              avghrsall   ->   avghrsall2000 avghrsall2001 ... avghrsall2018
+-----------------------------------------------------------------------------
+
+.         *save collapsed data
+.         tempfile allcoll
+
+.         save `allcoll'
+file /tmp/St25711.00000p saved
+
+.         *use all data to collapse hr wages by age bins in poverty
+.         use `alldata', clear
+
+.         keep if povcut==1 & ageb!=.
+(21,930,863 observations deleted)
+
+.         gcollapse (mean) avghrspov = annualhours [pw=perwt], by(year ageb)
+
+.         *merge collapsed hours for all v. those in poverty
+.         decode ageb, gen(agestr)
+
+.         drop ageb
+
+.         reshape wide avghrspov, i(agestr) j(year)
+(note: j = 2000 2001 2002 2003 2004 2005 2006 2007 2008 2009 2010 2011 2012 2013 2014 2015 2016 2017 2018)
+
+Data                               long   ->   wide
+-----------------------------------------------------------------------------
+Number of obs.                       95   ->       5
+Number of variables                   3   ->      20
+j variable (19 values)             year   ->   (dropped)
+xij variables:
+                              avghrspov   ->   avghrspov2000 avghrspov2001 ... avghrspov2018
+-----------------------------------------------------------------------------
+
+.         merge 1:1 agestr using `allcoll', assert(3) nogenerate
+
+    Result                           # of obs.
+    -----------------------------------------
+    not matched                             0
+    matched                                 5  
+    -----------------------------------------
+
+.         export excel "${data}age_hours.xls", firstrow(variable) replace
+file /projects/dperez/macropoverty/data/age_hours.xls saved
+
+. restore
+
+. 
+. 
+. /*Future analysis might also include mean wages and hours worked
+> for all quintiles, by age by race, and more. */
+. */
+. 
+. **************************************************************
+. * Race breakdown
+. **************************************************************
+. 
+. *** annual hours worked by race/ethnicity all versus in poverty
+. 
+. preserve
+
+.         *save all data
+.         tempfile alldata
+
+.         save `alldata'
+file /tmp/St25711.00000r saved
+
+.         use `alldata', clear
+
+.         *Collapse hourly wages
+.         gcollapse (mean) avghrsall = annualhours [pw=perwt], by(year wbhao)
+
+.         keep if wbhao!=.
+(19 observations deleted)
+
+.         decode wbhao, gen(wbhaostr)
+
+.         drop wbhao
+
+.         reshape wide avghrsall, i(wbhaostr) j(year)
+(note: j = 2000 2001 2002 2003 2004 2005 2006 2007 2008 2009 2010 2011 2012 2013 2014 2015 2016 2017 2018)
+
+Data                               long   ->   wide
+-----------------------------------------------------------------------------
+Number of obs.                       95   ->       5
+Number of variables                   3   ->      20
+j variable (19 values)             year   ->   (dropped)
+xij variables:
+                              avghrsall   ->   avghrsall2000 avghrsall2001 ... avghrsall2018
+-----------------------------------------------------------------------------
+
+.         *save collapsed data
+.         tempfile allcoll
+
+.         save `allcoll'
+file /tmp/St25711.00000s saved
+
+.         *use all data to collapse hr wages by race/ethnicity in poverty
+.         use `alldata', clear
+
+.         keep if povcut==1 & wbhao!=.
+(21,863,864 observations deleted)
+
+.         gcollapse (mean) avghrspov = annualhours [pw=perwt], by(year wbhao)
+
+.         *merge collapsed hours for all v. those in poverty
+.         decode wbhao, gen(wbhaostr)
+
+.         drop wbhao
+
+.         reshape wide avghrspov, i(wbhaostr) j(year)
+(note: j = 2000 2001 2002 2003 2004 2005 2006 2007 2008 2009 2010 2011 2012 2013 2014 2015 2016 2017 2018)
+
+Data                               long   ->   wide
+-----------------------------------------------------------------------------
+Number of obs.                       95   ->       5
+Number of variables                   3   ->      20
+j variable (19 values)             year   ->   (dropped)
+xij variables:
+                              avghrspov   ->   avghrspov2000 avghrspov2001 ... avghrspov2018
+-----------------------------------------------------------------------------
+
+.         merge 1:1 wbhaostr using `allcoll', assert(3) nogenerate
+
+    Result                           # of obs.
+    -----------------------------------------
+    not matched                             0
+    matched                                 5  
+    -----------------------------------------
+
+.         export excel "${data}wbhao_hours.xls", firstrow(variable) replace
+file /projects/dperez/macropoverty/data/wbhao_hours.xls saved
+
+. restore
+
+. 
+. /*
+> preserve
+> gcollapse (mean) avghrwage = hrwage0 [pw=perwt], by(year wbhao)
+> keep if wbhao!=.
+> reshape wide avghrwage, i(year) j(wbhao)
+> export excel "${data}wbhao_wages.xls", firstrow(variables) replace
+> restore
+> 
+> 
+> **************************************************************
+> * gender breakdown
+> **************************************************************
+> 
+> 
+> **************************************************************
+> * Educational attainment breakdown
+> **************************************************************
+> /*
+> preserve
+> keep if year==2018
+> tab wbhao, generate(wbhaodum)
+> gcollapse (count) white=wbhaodum1 Black=wbhaodum2 Hispanic=wbhaodum3 ///
+> Asian=wbhaodum4 Other=wbhaodum5 [pw=perwt]
+> list
+> restore
+> 
+> */
+> 
 
 end of do-file
 
-r(199);
-
-. des
-
-Contains data from acs_extract.dta
-  obs:    48,162,117                          
- vars:            71                          08 JAN 2020 14:39
- size: 7,079,831,199                          
---------------------------------------------------------------------------------------------------------------------------
-              storage   display    value
-variable name   type    format     label      variable label
---------------------------------------------------------------------------------------------------------------------------
-year            int     %8.0g      YEAR       census year
-sample          long    %12.0g     SAMPLE     ipums sample identifier
-serial          long    %12.0g                household serial number
-cbserial        double  %12.0g                original census bureau household serial number
-hhwt            int     %8.0g                 household weight
-hhtype          byte    %8.0g      HHTYPE     household type
-cluster         double  %12.0g                household cluster for variance estimation
-region          byte    %8.0g      REGION     census region and division
-statefip        byte    %8.0g      STATEFIP   state (fips code)
-countyfip       int     %8.0g                 county (fips code)
-density         double  %12.0g                population-weighted density of puma
-metro           byte    %8.0g      METRO      metropolitan status
-metarea         int     %8.0g      METAREA    metropolitan area [general version]
-metaread        int     %8.0g      METAREAD   metropolitan area [detailed version]
-city            int     %8.0g      CITY       city
-citypop         long    %12.0g                city population
-puma            long    %12.0g                public use microdata area
-strata          long    %12.0g                household strata for variance estimation
-gq              byte    %8.0g      GQ         group quarters status
-hhincome        long    %12.0g                total household income
-foodstmp        byte    %8.0g      FOODSTMP   food stamp recipiency
-pernum          byte    %8.0g                 person number in sample unit
-perwt           int     %8.0g                 person weight
-famunit         byte    %8.0g      FAMUNIT    family unit membership
-famsize         byte    %8.0g      FAMSIZE    number of own family members in household
-subfam          byte    %8.0g      SUBFAM     subfamily membership
-sftype          byte    %8.0g      SFTYPE     subfamily type
-sfrelate        byte    %8.0g      SFRELATE   relationship within subfamily
-nchild          byte    %8.0g      NCHILD     number of own children in the household
-nchlt5          byte    %8.0g      NCHLT5     number of own children under age 5 in household
-eldch           byte    %8.0g      ELDCH      age of eldest own child in household
-yngch           byte    %8.0g      YNGCH      age of youngest own child in household
-relate          byte    %8.0g      RELATE     relationship to household head [general version]
-related         int     %8.0g      RELATED    relationship to household head [detailed version]
-sex             byte    %8.0g      SEX        sex
-age             byte    %8.0g      AGE        age
-marst           byte    %8.0g      MARST      marital status
-race            byte    %8.0g      RACE       race [general version]
-raced           int     %8.0g      RACED      race [detailed version]
-hispan          byte    %8.0g      HISPAN     hispanic origin [general version]
-hispand         int     %8.0g      HISPAND    hispanic origin [detailed version]
-citizen         byte    %8.0g      CITIZEN    citizenship status
-educ            byte    %8.0g      EDUC       educational attainment [general version]
-educd           int     %8.0g      EDUCD      educational attainment [detailed version]
-gradeatt        byte    %8.0g      GRADEATT   grade level attending [general version]
-gradeattd       byte    %8.0g      GRADEATTD
-                                              grade level attending [detailed version]
-empstat         byte    %8.0g      EMPSTAT    employment status [general version]
-empstatd        byte    %8.0g      EMPSTATD   employment status [detailed version]
-labforce        byte    %8.0g      LABFORCE   labor force status
-classwkr        byte    %8.0g      CLASSWKR   class of worker [general version]
-classwkrd       byte    %8.0g      CLASSWKRD
-                                              class of worker [detailed version]
-wkswork1        byte    %8.0g                 weeks worked last year
-wkswork2        byte    %8.0g      WKSWORK2   weeks worked last year, intervalled
-uhrswork        byte    %8.0g      UHRSWORK   usual hours worked per week
-inctot          long    %12.0g                total personal income
-ftotinc         long    %12.0g                total family income
-incwage         long    %12.0g                wage and salary income
-incearn         long    %12.0g                total personal earned income
-poverty         int     %8.0g                 poverty status
-disabwrk        byte    %8.0g      DISABWRK   work disability
-vetdisab        byte    %8.0g      VETDISAB   va service-connected disability rating
-diffrem         byte    %8.0g      DIFFREM    cognitive difficulty
-diffphys        byte    %8.0g      DIFFPHYS   ambulatory difficulty
-diffmob         byte    %8.0g      DIFFMOB    independent living difficulty
-diffcare        byte    %8.0g      DIFFCARE   self-care difficulty
-diffsens        byte    %8.0g      DIFFSENS   vision or hearing difficulty
-diffeye         byte    %8.0g      DIFFEYE    vision difficulty
-diffhear        byte    %8.0g      DIFFHEAR   hearing difficulty
-cpiurs          double  %10.0g                CPI-U-RS, All items
-realftotinc     float   %9.0g                 
-tfaminc         float   %9.0g                 Transformed family income
---------------------------------------------------------------------------------------------------------------------------
-Sorted by: 
-     Note: Dataset has changed since last saved.
-
-. gstats sum tfaminc 
-
-                  Transformed family income                  
--------------------------------------------------------------
-      Percentiles      Smallest                              
-  1%            0     -35308.84                              
-  5%     5884.696     -35308.84                              
- 10%        10455     -33065.05      Obs           46,484,362
- 25%     21203.68     -33065.05      Sum of Wgt.   46,484,362
-                                                             
- 50%     39576.57                    Mean            52883.23
-                        Largest      Std. Dev.       54712.68
- 75%     65618.98       1824336                              
- 90%     102952.8       1824336      Variance        2.99e+09
- 95%     141592.5       1848603      Skewness        3.885136
- 99%     286661.1       1848603      Kurtosis        30.14801
-
+. 
+. capture log close
