@@ -24,12 +24,15 @@
 . tempfile cpi 
 
 . save `cpi' 
-file /tmp/St25711.000001 saved
+file /tmp/St18397.000001 saved
 
 . 
 . *load ACS dataset
 . use ${data}acs_extract.dta, clear
 
+. 
+. *later we will append 1970, 1980, 1990 data using
+. //append using ${data}acs_historical.dta, gen(acs_ext)
 . 
 . *merge cpi data to ACS
 . merge m:1 year using `cpi', keep(3) nogenerate
@@ -328,7 +331,8 @@ delimiter now cr
 > 
 > https://www.epi.org/data/methodology/
 > https://irle.berkeley.edu/files/2014/The-Impact-of-Oakland-data-and-methods.pdf
-> https://www.brookings.edu/wp-content/uploads/2019/11/201911_Brookings-Metro_low-wage-workforce_Ross-Bateman_TECHNICAL-APPENDIX.pdf
+> https://www.brookings.edu/wp-content/uploads/2019/11/201911_Brookings-Metro_low-wage-workforce_Ross-Bate
+> man_TECHNICAL-APPENDIX.pdf
 > 
 > **************************************************************/
 . 
@@ -368,26 +372,119 @@ delimiter now cr
 . *Annual hours worked by all versus those in poverty
 . preserve
 
+.         keep if labforce==2
+(0 observations deleted)
+
 .         tempfile alldata
 
 .         save `alldata'
-file /tmp/St25711.000003 saved
+file /tmp/St18397.000003 saved
 
 .         use `alldata', clear
 
 .         gcollapse (mean) avghrall = annualhours [pw=perwt], by(year)
 
+.         list
+
+     +-----------------+
+     | year   avghrall |
+     |-----------------|
+  1. | 2000   1863.132 |
+  2. | 2001   1865.057 |
+  3. | 2002    1838.93 |
+  4. | 2003   1833.483 |
+  5. | 2004   1834.446 |
+     |-----------------|
+  6. | 2005   1836.403 |
+  7. | 2006   1840.263 |
+  8. | 2007   1844.867 |
+  9. | 2008   1869.881 |
+ 10. | 2009   1827.109 |
+     |-----------------|
+ 11. | 2010   1811.301 |
+ 12. | 2011   1818.305 |
+ 13. | 2012   1828.525 |
+ 14. | 2013   1835.369 |
+ 15. | 2014   1846.056 |
+     |-----------------|
+ 16. | 2015    1858.19 |
+ 17. | 2016   1861.693 |
+ 18. | 2017   1870.015 |
+ 19. | 2018   1879.055 |
+     +-----------------+
+
 .         tempfile allcoll
 
 .         save `allcoll'
-file /tmp/St25711.000004 saved
+file /tmp/St18397.000004 saved
 
 .         use `alldata', clear
 
-.         keep if povcut==1
-(21,859,716 observations deleted)
+.         gcollapse (mean) avghrpov = annualhours [pw=perwt], by(year povcut)
 
-.         gcollapse (mean) avghrpov = annualhours [pw=perwt], by(year)
+.         list
+
+     +---------------------------------------------------------+
+     | year                                  povcut   avghrpov |
+     |---------------------------------------------------------|
+  1. | 2000   Family income above poverty threshold    1912.19 |
+  2. | 2000   Family income below poverty threshold   1140.587 |
+  3. | 2001   Family income above poverty threshold   1913.118 |
+  4. | 2001   Family income below poverty threshold   1129.801 |
+  5. | 2002   Family income above poverty threshold   1888.782 |
+     |---------------------------------------------------------|
+  6. | 2002   Family income below poverty threshold   1103.662 |
+  7. | 2003   Family income above poverty threshold   1885.059 |
+  8. | 2003   Family income below poverty threshold   1082.114 |
+  9. | 2004   Family income above poverty threshold     1887.6 |
+ 10. | 2004   Family income below poverty threshold   1090.946 |
+     |---------------------------------------------------------|
+ 11. | 2005   Family income above poverty threshold   1893.125 |
+ 12. | 2005   Family income below poverty threshold   1087.067 |
+ 13. | 2006   Family income above poverty threshold   1900.691 |
+ 14. | 2006   Family income below poverty threshold   1116.053 |
+ 15. | 2007   Family income above poverty threshold   1903.308 |
+     |---------------------------------------------------------|
+ 16. | 2007   Family income below poverty threshold   1117.591 |
+ 17. | 2008   Family income above poverty threshold    1925.97 |
+ 18. | 2008   Family income below poverty threshold   1185.053 |
+ 19. | 2009   Family income above poverty threshold   1888.553 |
+ 20. | 2009   Family income below poverty threshold   1137.426 |
+     |---------------------------------------------------------|
+ 21. | 2010   Family income above poverty threshold    1878.69 |
+ 22. | 2010   Family income below poverty threshold   1101.135 |
+ 23. | 2011   Family income above poverty threshold   1888.932 |
+ 24. | 2011   Family income below poverty threshold   1103.033 |
+ 25. | 2012   Family income above poverty threshold   1897.741 |
+     |---------------------------------------------------------|
+ 26. | 2012   Family income below poverty threshold   1124.631 |
+ 27. | 2013   Family income above poverty threshold   1904.901 |
+ 28. | 2013   Family income below poverty threshold   1133.161 |
+ 29. | 2014   Family income above poverty threshold   1913.832 |
+ 30. | 2014   Family income below poverty threshold    1156.12 |
+     |---------------------------------------------------------|
+ 31. | 2015   Family income above poverty threshold   1921.425 |
+ 32. | 2015   Family income below poverty threshold   1168.652 |
+ 33. | 2016   Family income above poverty threshold   1920.934 |
+ 34. | 2016   Family income below poverty threshold   1175.786 |
+ 35. | 2017   Family income above poverty threshold   1926.451 |
+     |---------------------------------------------------------|
+ 36. | 2017   Family income below poverty threshold   1165.868 |
+ 37. | 2018   Family income above poverty threshold   1933.741 |
+ 38. | 2018   Family income below poverty threshold   1175.867 |
+     +---------------------------------------------------------+
+
+.         reshape wide avghrpov, i(year) j(povcut)
+(note: j = 0 1)
+
+Data                               long   ->   wide
+-----------------------------------------------------------------------------
+Number of obs.                       38   ->      19
+Number of variables                   3   ->       3
+j variable (2 values)            povcut   ->   (dropped)
+xij variables:
+                               avghrpov   ->   avghrpov0 avghrpov1
+-----------------------------------------------------------------------------
 
 .         *merge collapsed hours for all v. those in poverty
 .         merge 1:1 year using `allcoll', assert(3) nogenerate
@@ -408,10 +505,13 @@ file /projects/dperez/macropoverty/data/emp_hours.xls saved
 . *Annual hours (per family) worked by all versus those in poverty
 . preserve
 
+.         keep if labforce==2
+(0 observations deleted)
+
 .         tempfile alldata
 
 .         save `alldata'
-file /tmp/St25711.000006 saved
+file /tmp/St18397.000006 saved
 
 .         use `alldata', clear
 
@@ -420,7 +520,7 @@ file /tmp/St25711.000006 saved
 .         tempfile allcoll
 
 .         save `allcoll'
-file /tmp/St25711.000007 saved
+file /tmp/St18397.000007 saved
 
 .         use `alldata', clear
 
@@ -448,10 +548,13 @@ file /projects/dperez/macropoverty/data/emp_famhours.xls saved
 . *Annual wages for all versus those in poverty
 . preserve
 
+.         keep if labforce==2
+(0 observations deleted)
+
 .         tempfile alldata
 
 .         save `alldata'
-file /tmp/St25711.000009 saved
+file /tmp/St18397.000009 saved
 
 .         use `alldata', clear
 
@@ -460,7 +563,7 @@ file /tmp/St25711.000009 saved
 .         tempfile allcoll
 
 .         save `allcoll'
-file /tmp/St25711.00000a saved
+file /tmp/St18397.00000a saved
 
 .         use `alldata', clear
 
@@ -495,11 +598,14 @@ file /projects/dperez/macropoverty/data/emp_wages.xls saved
 . 
 . preserve
 
+.         keep if labforce==2
+(0 observations deleted)
+
 .         *save all data
 .         tempfile alldata
 
 .         save `alldata'
-file /tmp/St25711.00000c saved
+file /tmp/St18397.00000c saved
 
 .         use `alldata', clear
 
@@ -510,7 +616,7 @@ file /tmp/St25711.00000c saved
 .         tempfile allcoll
 
 .         save `allcoll'
-file /tmp/St25711.00000d saved
+file /tmp/St18397.00000d saved
 
 .         *use all data to collapse bottom fifth family hours
 .         use `alldata', clear
@@ -541,11 +647,14 @@ file /projects/dperez/macropoverty/data/quint_famhours.xls saved
 . 
 . preserve
 
+.         keep if labforce==2
+(0 observations deleted)
+
 .         *save all data
 .         tempfile alldata
 
 .         save `alldata'
-file /tmp/St25711.00000f saved
+file /tmp/St18397.00000f saved
 
 .         use `alldata', clear
 
@@ -556,7 +665,7 @@ file /tmp/St25711.00000f saved
 .         tempfile allcoll
 
 .         save `allcoll'
-file /tmp/St25711.00000g saved
+file /tmp/St18397.00000g saved
 
 .         *use all data to collapse bottom fifth family hours
 .         use `alldata', clear
@@ -586,11 +695,14 @@ file /projects/dperez/macropoverty/data/quint_famwages.xls saved
 . 
 . preserve
 
+.         keep if labforce==2
+(0 observations deleted)
+
 .         *save all data
 .         tempfile alldata
 
 .         save `alldata'
-file /tmp/St25711.00000i saved
+file /tmp/St18397.00000i saved
 
 .         use `alldata', clear
 
@@ -601,7 +713,7 @@ file /tmp/St25711.00000i saved
 .         tempfile allcoll
 
 .         save `allcoll'
-file /tmp/St25711.00000j saved
+file /tmp/St18397.00000j saved
 
 .         *use all data to collapse bottom fifth family hours
 .         use `alldata', clear
@@ -638,10 +750,13 @@ file /projects/dperez/macropoverty/data/quint_faminc.xls saved
 . preserve
 
 .         *save all data
+.         keep if labforce==2     
+(0 observations deleted)
+
 .         tempfile alldata
 
 .         save `alldata'
-file /tmp/St25711.00000l saved
+file /tmp/St18397.00000l saved
 
 .         use `alldata', clear
 
@@ -671,7 +786,7 @@ xij variables:
 .         tempfile allcoll
 
 .         save `allcoll'
-file /tmp/St25711.00000m saved
+file /tmp/St18397.00000m saved
 
 .         *use all data to collapse hr wages by age bins in poverty
 .         use `alldata', clear
@@ -719,11 +834,14 @@ file /projects/dperez/macropoverty/data/age_hrwage.xls saved
 . 
 . preserve
 
+.         keep if labforce==2
+(0 observations deleted)
+
 .         *save all data
 .         tempfile alldata
 
 .         save `alldata'
-file /tmp/St25711.00000o saved
+file /tmp/St18397.00000o saved
 
 .         use `alldata', clear
 
@@ -753,7 +871,7 @@ xij variables:
 .         tempfile allcoll
 
 .         save `allcoll'
-file /tmp/St25711.00000p saved
+file /tmp/St18397.00000p saved
 
 .         *use all data to collapse hr wages by age bins in poverty
 .         use `alldata', clear
@@ -807,11 +925,14 @@ file /projects/dperez/macropoverty/data/age_hours.xls saved
 . 
 . preserve
 
+.         keep if labforce==2
+(0 observations deleted)
+
 .         *save all data
 .         tempfile alldata
 
 .         save `alldata'
-file /tmp/St25711.00000r saved
+file /tmp/St18397.00000r saved
 
 .         use `alldata', clear
 
@@ -841,7 +962,7 @@ xij variables:
 .         tempfile allcoll
 
 .         save `allcoll'
-file /tmp/St25711.00000s saved
+file /tmp/St18397.00000s saved
 
 .         *use all data to collapse hr wages by race/ethnicity in poverty
 .         use `alldata', clear
@@ -890,27 +1011,97 @@ file /projects/dperez/macropoverty/data/wbhao_hours.xls saved
 > export excel "${data}wbhao_wages.xls", firstrow(variables) replace
 > restore
 > 
-> 
-> **************************************************************
-> * gender breakdown
-> **************************************************************
-> 
-> 
-> **************************************************************
-> * Educational attainment breakdown
-> **************************************************************
-> /*
-> preserve
-> keep if year==2018
-> tab wbhao, generate(wbhaodum)
-> gcollapse (count) white=wbhaodum1 Black=wbhaodum2 Hispanic=wbhaodum3 ///
-> Asian=wbhaodum4 Other=wbhaodum5 [pw=perwt]
-> list
-> restore
-> 
 > */
-> 
+. 
+. **************************************************************
+. * gender breakdown
+. **************************************************************
+. 
+. 
+. **************************************************************
+. * Educational attainment breakdown
+. **************************************************************
+. preserve
 
+.         keep if labforce==2
+(0 observations deleted)
+
+.         *save all data
+.         tempfile alldata
+
+.         save `alldata'
+file /tmp/St18397.00000u saved
+
+.         use `alldata', clear
+
+.         *Collapse annual hours worked
+.         gcollapse (mean) avghrsall = annualhours [pw=perwt], by(year educ)
+
+.         keep if educ!=.
+(0 observations deleted)
+
+.         decode educ, gen(educstr)
+
+.         drop educ
+
+.         reshape wide avghrsall, i(educstr) j(year)
+(note: j = 2000 2001 2002 2003 2004 2005 2006 2007 2008 2009 2010 2011 2012 2013 2014 2015 2016 2017 2018)
+
+Data                               long   ->   wide
+-----------------------------------------------------------------------------
+Number of obs.                       95   ->       5
+Number of variables                   3   ->      20
+j variable (19 values)             year   ->   (dropped)
+xij variables:
+                              avghrsall   ->   avghrsall2000 avghrsall2001 ... avghrsall2018
+-----------------------------------------------------------------------------
+
+.         *save collapsed data
+.         tempfile allcoll
+
+.         save `allcoll'
+file /tmp/St18397.00000v saved
+
+.         *use all data to collapse annual hours by educ in poverty
+.         use `alldata', clear
+
+.         keep if povcut==1 & educ!=.
+(21,859,716 observations deleted)
+
+.         gcollapse (mean) avghrspov = annualhours [pw=perwt], by(year educ)
+
+.         *merge collapsed hours for all educ categories v. those in poverty
+.         decode educ, gen(educstr)
+
+.         drop educ
+
+.         reshape wide avghrspov, i(educstr) j(year)
+(note: j = 2000 2001 2002 2003 2004 2005 2006 2007 2008 2009 2010 2011 2012 2013 2014 2015 2016 2017 2018)
+
+Data                               long   ->   wide
+-----------------------------------------------------------------------------
+Number of obs.                       95   ->       5
+Number of variables                   3   ->      20
+j variable (19 values)             year   ->   (dropped)
+xij variables:
+                              avghrspov   ->   avghrspov2000 avghrspov2001 ... avghrspov2018
+-----------------------------------------------------------------------------
+
+.         merge 1:1 educstr using `allcoll', assert(3) nogenerate
+
+    Result                           # of obs.
+    -----------------------------------------
+    not matched                             0
+    matched                                 5  
+    -----------------------------------------
+
+.         export excel "${data}educ_hours.xls", firstrow(variable) replace
+file /projects/dperez/macropoverty/data/educ_hours.xls saved
+
+. restore
+
+. 
+. 
 end of do-file
 
 . 

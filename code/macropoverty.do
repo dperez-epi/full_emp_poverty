@@ -54,6 +54,9 @@ save `cpi'
 *load ACS dataset
 use ${data}acs_extract.dta, clear
 
+*later we will append 1970, 1980, 1990 data using
+//append using ${data}acs_historical.dta, gen(acs_ext)
+
 *merge cpi data to ACS
 merge m:1 year using `cpi', keep(3) nogenerate
 
@@ -68,7 +71,7 @@ local basevalue =`r(mean)'
 **************************************************************
 
 *keep if in laborforce
-*keep if labforce==2
+keep if labforce==2
 
 *Delineate poverty threshold using poverty variable
 do acs_povcut.do

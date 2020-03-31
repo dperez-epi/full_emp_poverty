@@ -17,11 +17,13 @@ preserve
 	save `alldata'
 	use `alldata', clear
 	gcollapse (mean) avghrall = annualhours [pw=perwt], by(year)
+	list
 	tempfile allcoll
 	save `allcoll'
 	use `alldata', clear
-	keep if povcut==1
-	gcollapse (mean) avghrpov = annualhours [pw=perwt], by(year)
+	gcollapse (mean) avghrpov = annualhours [pw=perwt], by(year povcut)
+	list
+	reshape wide avghrpov, i(year) j(povcut)
 	*merge collapsed hours for all v. those in poverty
 	merge 1:1 year using `allcoll', assert(3) nogenerate
 	export excel "${data}emp_hours.xls", firstrow(variable) replace
@@ -245,6 +247,7 @@ reshape wide avghrwage, i(year) j(wbhao)
 export excel "${data}wbhao_wages.xls", firstrow(variables) replace
 restore
 
+*/
 
 **************************************************************
 * gender breakdown
@@ -254,14 +257,30 @@ restore
 **************************************************************
 * Educational attainment breakdown
 **************************************************************
-/*
 preserve
-keep if year==2018
-tab wbhao, generate(wbhaodum)
-gcollapse (count) white=wbhaodum1 Black=wbhaodum2 Hispanic=wbhaodum3 ///
-Asian=wbhaodum4 Other=wbhaodum5 [pw=perwt]
-list
+	keep if labforce==2
+	*save all data
+	tempfile alldata
+	save `alldata'
+	use `alldata', clear
+	*Collapse annual hours worked
+	gcollapse (mean) avghrsall = annualhours [pw=perwt], by(year educ)
+	keep if educ!=.
+	decode educ, gen(educstr)
+	drop educ
+	reshape wide avghrsall, i(educstr) j(year)
+	*save collapsed data
+	tempfile allcoll
+	save `allcoll'
+	*use all data to collapse annual hours by educ in poverty
+	use `alldata', clear
+	keep if povcut==1 & educ!=.
+	gcollapse (mean) avghrspov = annualhours [pw=perwt], by(year educ)
+	*merge collapsed hours for all educ categories v. those in poverty
+	decode educ, gen(educstr)
+	drop educ
+	reshape wide avghrspov, i(educstr) j(year)
+	merge 1:1 educstr using `allcoll', assert(3) nogenerate
+	export excel "${data}educ_hours.xls", firstrow(variable) replace
 restore
-
-*/
 
