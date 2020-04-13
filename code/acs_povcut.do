@@ -11,5 +11,5 @@ replace povcut = 1 if poverty < 100
 replace povcut = 0 if poverty >= 100
 
 lab var povcut "Poverty threshold"
-label def povcut 0 "Family income above poverty threshold" 1 "Family income below poverty threshold"
+label def povcut 0 "FamInc above poverty threshold" 1 "FamInc below poverty threshold"
 label value povcut povcut

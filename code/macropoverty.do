@@ -11,13 +11,13 @@
 	1. Preamble
 	2. File Preparation
 	3. Data Processing
-		3.1 Universe and variable creation
+		3.1 Universe and variables creation
 		3.2 Measuring income (from wages and salary) by family + quintiles
 		3.3 Calculating hours and weeks worked per year, and usual hours per week
 			by family
 		3.4 Calculating implied hourly wages from wages, salary and hours worked
 	4. Analysis
-		4.1 exports.do
+		4.1 exports.do, create and export hour and wage breakdowns
 			
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
@@ -71,7 +71,7 @@ local basevalue =`r(mean)'
 **************************************************************
 
 *keep if in laborforce
-keep if labforce==2
+*keep 
 
 *Delineate poverty threshold using poverty variable
 do acs_povcut.do
@@ -96,7 +96,7 @@ gen r_incwage = incwage * [`basevalue'/cpiurs]
 label var r_incwage "wages and salary income in real 2018 dollars"
 
 *sum real wages within families
-gegen rf_incwage = total(r_incwage), by(year serial famunit) missing
+gegen rf_incwage = total(r_incwage), by(year serial famsize) missing
 label var rf_incwage "income from salary and wages summed over family size"
 
 *transform real wages
@@ -104,7 +104,7 @@ gen rft_incwage = (rf_incwage / sqrt(famsize))
 label var rft_incwage "Transformed family salary and wages"
 
 *create quintiles using real transformed family salary and wage incomes
-gegen rft_incwage5 = xtile(rft_incwage) [pw=perwt], nq(5)
+gegen rft_incwage5 = xtile(rft_incwage) if labforce==2 [pw=perwt], by(year) nq(5)
 label var rft_incwage5 "Transformed family salary and wage quintiles"
 
 *label our quintiles
@@ -119,18 +119,35 @@ label def rft_incwage5
 #delimit cr
 lab val rft_incwage5 rft_incwage5
 
+/*
+Note: Working-age households are those headed by someone under age 65. 
+Data are for money income. Percentage changes are approximated by taking
+the difference of natural logs of wages and hours.
+
+*/
 
 **************************************************************
 * 3.3 Calculating hours and weeks worked per year, and usual hours per week by family
 **************************************************************
 
-*average weeks worked per year, by individuals (using midpoint of intervaled variable)
-gen avgwkswork = wkswork2
-mvdecode avgwkswork, mv(0)
+*average weeks worked per year, by individuals
+mvdecode wkswork*, mv(0)
+gen avgwkswork =.
+
+/*
+replace avgwkswork = wkswork2
 recode avgwkswork (1 = 7) (2 = 20) (3 = 33) (4 = 43.5) (5=48.5) (6=51)
+*/
+
+*slightly less precise measure in years 2008-2018, using midpoint of intervaled variable
+replace avgwkswork = wkswork2 if year>=2008 & year<=2018
+recode avgwkswork (1 = 7) (2 = 20) (3 = 33) (4 = 43.5) (5=48.5) (6=51)
+*exact weeks worked per year 2000-2007
+replace avgwkswork = wkswork1 if year>=2000 & year<=2007
+
 
 *Usual hours worked per week, by family
-gegen weeklyfamhours = total(uhrswork), by(year serial famunit) missing
+gegen weeklyfamhours = total(uhrswork), by(year serial famsize) missing
 label var weeklyfamhours "Usual hours worked per week, by family"
 
 *annual hours worked per person, which is usual hours worked * avg weeks worked
@@ -150,15 +167,17 @@ https://www.brookings.edu/wp-content/uploads/2019/11/201911_Brookings-Metro_low-
 
 **************************************************************/
 
-gen hrwage0 = r_incwage / (annualhours)
+gen hrwage0 = r_incwage / (annualhours) 
 label var hrwage0 "Implied hourly wages from wages and salary excluding hours topcode"
 *exclude outliers per EPI methodology
 replace hrwage0 = . if hrwage0 < .98
 replace hrwage0 = . if hrwage0 > 196.08
 
-gen hrwage1 = rf_incwage / (annual_famhours)
+gen hrwage1 = rf_incwage / (annual_famhours) 
 label var hrwage1 "Implied hourly family wages from wages and salary"
 
-do exports.do
+*gen hrwage3 = rf_incwage / (annual_famhours) if rft_incwage5==1
+
+*do exports.do
 
 capture log close

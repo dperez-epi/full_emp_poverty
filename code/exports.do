@@ -2,8 +2,8 @@
 * 4.0 Analysis
 **************************************************************
 /*
-browse year serial famsize famunit pernum age incwage r_incwage ///
- rf_incwage rft_incwage rft_incwage5 uhrswork hrwage0 annualhours avgwkswork ///
+browse year serial famsize famunit pernum age relate incwage r_incwage ///
+ rf_incwage rft_incwage rft_incwage5 uhrswork hrwage0 hrwage1 annualhours avgwkswork ///
  weeklyfamhours annual_famhours povcut wbhao educ
 */
 **************************************************************
@@ -63,8 +63,6 @@ preserve
 	export excel "${data}emp_wages.xls", firstrow(variable) replace
 restore
 
-
-
 **************************************************************
 * Bottom fifth vs all hours, incomes, wages
 **************************************************************
@@ -86,35 +84,13 @@ preserve
 	use `alldata', clear
 	keep if rft_incwage5==1
 	gcollapse (mean) avghours = annual_famhours [pw=perwt], by(year)
-	*merge collapsed hours for all v. those in poverty
+	*merge collapsed hours for all v. those in bottom fifth
 	merge 1:1 year using `allcoll', assert(3) nogenerate
+	list
 	export excel "${data}quint_famhours.xls", firstrow(variable) replace
 restore
 
-
-*** Implied hourly family wage for bottom fifth vs all
-
-preserve
-	keep if labforce==2
-	*save all data
-	tempfile alldata
-	save `alldata'
-	use `alldata', clear
-	*Collapse family hours
-	gcollapse (mean) avgwgsall = hrwage1 [pw=perwt], by(year)
-	*save collapsed data
-	tempfile allcoll
-	save `allcoll'
-	*use all data to collapse bottom fifth family hours
-	use `alldata', clear
-	keep if rft_incwage5==1
-	gcollapse (mean) avgwgsfifth = hrwage1 [pw=perwt], by(year)
-	*merge collapsed hours for all v. those in poverty
-	merge 1:1 year using `allcoll', assert(3) nogenerate
-	export excel "${data}quint_famwages.xls", firstrow(variable) replace
-restore
-
-*** Implied family incomes for bottom fifth vs all
+*** Implied annual family incomes for bottom fifth vs all
 
 preserve
 	keep if labforce==2
@@ -131,22 +107,100 @@ preserve
 	use `alldata', clear
 	keep if rft_incwage5==1
 	gcollapse (mean) avgincfifth = rf_incwage [pw=perwt], by(year)
-	*merge collapsed hours for all v. those in poverty
+	*merge collapsed hours for all v. those in bottom fifth
 	merge 1:1 year using `allcoll', assert(3) nogenerate
+	list
 	export excel "${data}quint_faminc.xls", firstrow(variable) replace
 restore
+
+*** hourly family wage for bottom fifth vs all
+
+preserve
+	*save all data
+	tempfile alldata
+	save `alldata'
+	use `alldata', clear
+	*Collapse family hours
+	gcollapse (mean) avgwgsall = hrwage1 [pw=perwt], by(year)
+	*save collapsed data
+	tempfile allcoll
+	save `allcoll'
+	*use all data to collapse bottom fifth family hours
+	use `alldata', clear
+	keep if rft_incwage5==1
+	gcollapse (mean) avgwgsfifth = hrwage1 [pw=perwt], by(year)
+	*merge collapsed hours for all v. those in bottom fifth
+	merge 1:1 year using `allcoll', assert(3) nogenerate
+	*export excel "${data}quint_famwages.xls", firstrow(variable) replace
+	list
+restore
+
+/*
+My issue:
+
+   Average annual hours worked	  Average annual incomes		Implied fam hrly wages			
+Year	Bottom fifth	All	Bottom fifth	   All		     Bottom fifth  All
+2000	 2,334 	 3,719 		 $17,319 	 $85,085 		 $7.42 	 $22.88 
+2001	 2,314 	 3,637 		 $16,477 	 $84,730 		 $7.12 	 $23.30 
+2002	 2,234 	 3,585 		 $15,946 	 $85,022 		 $7.14 	 $23.72 
+2003	 2,177 	 3,553 		 $15,265 	 $83,828 		 $7.01 	 $23.60 
+2004	 2,183 	 3,542 		 $14,840 	 $83,942 		 $6.80 	 $23.70 
+2005	 2,165 	 3,561 		 $14,717 	 $83,957 		 $6.80 	 $23.58 
+2006	 2,136 	 3,601 		 $14,327 	 $84,152 		 $6.71 	 $23.37 
+2007	 2,146 	 3,608 		 $14,741 	 $86,070 		 $6.87 	 $23.85 
+2008	 2,153 	 3,613 		 $14,598 	 $85,531 		 $6.78 	 $23.67 
+2009	 2,001 	 3,496 		 $13,187 	 $84,608 		 $6.59 	 $24.20 
+2010	 1,877 	 3,426 		 $11,485 	 $81,508 		 $6.12 	 $23.79 
+2011	 1,855 	 3,432 		 $10,968 	 $80,374 		 $5.91 	 $23.42 
+2012	 1,903 	 3,471 		 $11,491 	 $81,309 		 $6.04 	 $23.43 
+2013	 1,933 	 3,509 		 $12,200 	 $83,453 		 $6.31 	 $23.78 
+2014	 1,981 	 3,550 		 $12,778 	 $84,464 		 $6.45 	 $23.80 
+2015	 2,032 	 3,599 		 $13,802 	 $88,000 		 $6.79 	 $24.45 
+2016	 2,065 	 3,625 		 $14,449 	 $90,266 		 $7.00 	 $24.90 
+2017	 2,103 	 3,658 		 $15,142 	 $91,964 		 $7.20 	 $25.14 
+2018	 2,129 	 3,686 		 $15,532 	 $93,249 		 $7.29 	 $25.30 
+
+but my non-implied wages calculated via,
+
+gen hrwage0 = r_incwage / (annualhours) 
+label var hrwage0 "Implied hourly wages from wages and salary excluding hours topcode"
+*exclude outliers per EPI methodology
+replace hrwage0 = . if hrwage0 < .98
+replace hrwage0 = . if hrwage0 > 196.08
+
+yields:
+	Average hourly household wages	
+ Year 	 Bottom fifth 	 All 
+ 2000 	 $10.46 	 $26.35 
+ 2001 	 $10.25 	 $26.34 
+ 2002 	 $10.27 	 $26.72 
+ 2003 	 $10.48 	 $26.59 
+ 2004 	 $10.50 	 $26.96 
+ 2005 	 $10.06 	 $27.19 
+ 2006 	 $9.67 	 	$26.76 
+ 2007 	 $9.90 	 	$26.83 
+ 2008 	 $9.31 	 	$25.79 
+ 2009 	 $9.52 	 	$26.29 
+ 2010 	 $9.55 	 	$25.75 
+ 2011 	 $9.22 	 	$25.27 
+ 2012 	 $9.14 	 	$25.37 
+ 2013 	 $9.37 	 	$25.72 
+ 2014 	 $9.28 	 	$25.68 
+ 2015 	 $9.48 	 	$26.55 
+ 2016 	 $9.64 	 	$26.85 
+ 2017 	 $9.97 	 	$27.37 
+ 2018 	 $9.90 	 	$27.60 
+*/
 
 
 **************************************************************
 * Age breakdown
 **************************************************************
 
-
 *** Implied incomes for all age bins
 
 preserve
 	*save all data
-	keep if labforce==2	
 	tempfile alldata
 	save `alldata'
 	use `alldata', clear
@@ -169,7 +223,8 @@ preserve
 	reshape wide avgwagepov, i(agestr) j(year)
 	*merge collapsed hours for all v. those in poverty
 	merge 1:1 agestr using `allcoll', assert(3) nogenerate
-	export excel "${data}age_hrwage.xls", firstrow(variable) replace
+	*export excel "${data}age_hrwage.xls", firstrow(variable) replace
+	list
 restore
 
 *** annual hours worked by age bin, all versus in poverty
@@ -239,15 +294,6 @@ preserve
 	export excel "${data}wbhao_hours.xls", firstrow(variable) replace
 restore
 
-/*
-preserve
-gcollapse (mean) avghrwage = hrwage0 [pw=perwt], by(year wbhao)
-keep if wbhao!=.
-reshape wide avghrwage, i(year) j(wbhao)
-export excel "${data}wbhao_wages.xls", firstrow(variables) replace
-restore
-
-*/
 
 **************************************************************
 * gender breakdown
