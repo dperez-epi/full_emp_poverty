@@ -1,3 +1,5 @@
+cap log close
+capture log using macropoverty.txt, text replace
 /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 	Author:		Daniel Perez
 	Title: 		macropoverty.do
@@ -26,11 +28,9 @@
 **************************************************************
 * 1. Preamble
 **************************************************************
-cap log close
 clear all
 set more off
 
-capture log using macropoverty.txt, text replace
 
 *Install useful packages one time before running code
 //ssc install gtools
@@ -70,9 +70,6 @@ local basevalue =`r(mean)'
 * 3.1 Universe and variable creation
 **************************************************************
 
-*keep if in laborforce
-*keep 
-
 *Delineate poverty threshold using poverty variable
 do acs_povcut.do
 
@@ -85,6 +82,8 @@ do raceethnicity.do
 *create EPI-style education variable
 do education.do
 
+svyset cluster [pweight=perwt], strata(strata)
+
 **************************************************************
 * 3.2 Measuring income (from wages and salary) by family + quintiles
 **************************************************************
@@ -96,7 +95,7 @@ gen r_incwage = incwage * [`basevalue'/cpiurs]
 label var r_incwage "wages and salary income in real 2018 dollars"
 
 *sum real wages within families
-gegen rf_incwage = total(r_incwage), by(year serial famsize) missing
+gegen rf_incwage = total(r_incwage), by(year serial famunit famsize) missing
 label var rf_incwage "income from salary and wages summed over family size"
 
 *transform real wages
@@ -130,8 +129,10 @@ the difference of natural logs of wages and hours.
 * 3.3 Calculating hours and weeks worked per year, and usual hours per week by family
 **************************************************************
 
-*average weeks worked per year, by individuals
+*drop missing values
 mvdecode wkswork*, mv(0)
+
+*generate average weeks worked per year, on individual level
 gen avgwkswork =.
 
 /*
@@ -144,10 +145,24 @@ replace avgwkswork = wkswork2 if year>=2008 & year<=2018
 recode avgwkswork (1 = 7) (2 = 20) (3 = 33) (4 = 43.5) (5=48.5) (6=51)
 *exact weeks worked per year 2000-2007
 replace avgwkswork = wkswork1 if year>=2000 & year<=2007
+label var avgwkswork "Average weeks worked per year"
+notes avgwkswork: 2000-2007: Continuous measure of weeks worked last year, wkswork1.
+notes avgwkswork: 2008-2018: Midpoints of intervalled measure of weeks worked last year, wkswork2.
 
+/*
+**comparison of wkswork 1 and 2 between 2000-2007
+
+gen avgwksinter = wkswork2 if year>=2000 & year<=2007
+recode avgwksinter (1 = 7) (2 = 20) (3 = 33) (4 = 43.5) (5=48.5) (6=51)
+label var avgwksinter "Intervalled test"
+gen avgwkscont = wkswork1 if year>=2000 & year<=2007
+label var avgwkscont "Continuous test"
+gen contannual = avgwkscont * uhrswork
+gen intannual = avgwksinter *uhrswork
+*/
 
 *Usual hours worked per week, by family
-gegen weeklyfamhours = total(uhrswork), by(year serial famsize) missing
+gegen weeklyfamhours = total(uhrswork), by(year serial famunit famsize) missing
 label var weeklyfamhours "Usual hours worked per week, by family"
 
 *annual hours worked per person, which is usual hours worked * avg weeks worked
@@ -155,7 +170,7 @@ gen annualhours = uhrswork * avgwkswork
 label var annualhours "Usual hours worked annually, by individual"
 
 *annual hours worked by family
-gegen annual_famhours = total(annualhours), by(year serial famsize) missing
+gegen annual_famhours = total(annualhours) by(year serial famunit famsize) missing
 label var annual_famhours "Annual hours worked by family"
 
 /**************************************************************

@@ -2,9 +2,9 @@
 * 4.0 Analysis
 **************************************************************
 /*
-browse year serial famsize famunit pernum age relate incwage r_incwage ///
+browse year serial famsize famunit pernum ftotinc age relate incwage r_incwage ///
  rf_incwage rft_incwage rft_incwage5 uhrswork hrwage0 hrwage1 annualhours avgwkswork ///
- weeklyfamhours annual_famhours povcut wbhao educ
+ weeklyfamhours annual_famhours povcut wbho educ
 */
 **************************************************************
 * all employable people versus those in poverty
@@ -76,18 +76,21 @@ preserve
 	save `alldata'
 	use `alldata', clear
 	*Collapse family hours
-	gcollapse (mean) avgwgsall = annual_famhours [pw=perwt], by(year)
+	gcollapse (mean) avgwgsall = annual_famhours (count) pop = pernum [pw=perwt], by(year)
+	format pop %10.0f
 	*save collapsed data
 	tempfile allcoll
 	save `allcoll'
 	*use all data to collapse bottom fifth family hours
 	use `alldata', clear
 	keep if rft_incwage5==1
-	gcollapse (mean) avghours = annual_famhours [pw=perwt], by(year)
+	gcollapse (mean) avghours = annual_famhours (count) poppov=pernum [pw=perwt], by(year)
+	format poppov %10.0f
 	*merge collapsed hours for all v. those in bottom fifth
 	merge 1:1 year using `allcoll', assert(3) nogenerate
-	list
+	gen share = poppov / pop
 	export excel "${data}quint_famhours.xls", firstrow(variable) replace
+	list
 restore
 
 *** Implied annual family incomes for bottom fifth vs all
@@ -109,8 +112,8 @@ preserve
 	gcollapse (mean) avgincfifth = rf_incwage [pw=perwt], by(year)
 	*merge collapsed hours for all v. those in bottom fifth
 	merge 1:1 year using `allcoll', assert(3) nogenerate
-	list
 	export excel "${data}quint_faminc.xls", firstrow(variable) replace
+	list
 restore
 
 *** hourly family wage for bottom fifth vs all
@@ -120,7 +123,6 @@ preserve
 	tempfile alldata
 	save `alldata'
 	use `alldata', clear
-	*Collapse family hours
 	gcollapse (mean) avgwgsall = hrwage1 [pw=perwt], by(year)
 	*save collapsed data
 	tempfile allcoll
@@ -131,7 +133,7 @@ preserve
 	gcollapse (mean) avgwgsfifth = hrwage1 [pw=perwt], by(year)
 	*merge collapsed hours for all v. those in bottom fifth
 	merge 1:1 year using `allcoll', assert(3) nogenerate
-	*export excel "${data}quint_famwages.xls", firstrow(variable) replace
+	export excel "${data}quint_famwages.xls", firstrow(variable) replace
 	list
 restore
 
@@ -274,30 +276,25 @@ preserve
 	save `alldata'
 	use `alldata', clear
 	*Collapse hourly wages
-	gcollapse (mean) avghrsall = annualhours [pw=perwt], by(year wbhao)
-	keep if wbhao!=.
-	decode wbhao, gen(wbhaostr)
-	drop wbhao
-	reshape wide avghrsall, i(wbhaostr) j(year)
+	gcollapse (mean) avghrsall = annualhours [pw=perwt], by(year wbho)
+	keep if wbho!=.
+	decode wbho, gen(wbhostr)
+	drop wbho
+	reshape wide avghrsall, i(wbhostr) j(year)
 	*save collapsed data
 	tempfile allcoll
 	save `allcoll'
 	*use all data to collapse hr wages by race/ethnicity in poverty
 	use `alldata', clear
-	keep if povcut==1 & wbhao!=.
-	gcollapse (mean) avghrspov = annualhours [pw=perwt], by(year wbhao)
+	keep if povcut==1 & wbho!=.
+	gcollapse (mean) avghrspov = annualhours [pw=perwt], by(year wbho)
 	*merge collapsed hours for all v. those in poverty
-	decode wbhao, gen(wbhaostr)
-	drop wbhao
-	reshape wide avghrspov, i(wbhaostr) j(year)
-	merge 1:1 wbhaostr using `allcoll', assert(3) nogenerate
-	export excel "${data}wbhao_hours.xls", firstrow(variable) replace
+	decode wbho, gen(wbhostr)
+	drop wbho
+	reshape wide avghrspov, i(wbhostr) j(year)
+	merge 1:1 wbhostr using `allcoll', assert(3) nogenerate
+	export excel "${data}wbho_hours.xls", firstrow(variable) replace
 restore
-
-
-**************************************************************
-* gender breakdown
-**************************************************************
 
 
 **************************************************************
@@ -312,9 +309,7 @@ preserve
 	*Collapse annual hours worked
 	gcollapse (mean) avghrsall = annualhours [pw=perwt], by(year educ)
 	keep if educ!=.
-	decode educ, gen(educstr)
-	drop educ
-	reshape wide avghrsall, i(educstr) j(year)
+	reshape wide avghrsall, i(educ) j(year)
 	*save collapsed data
 	tempfile allcoll
 	save `allcoll'
@@ -323,10 +318,14 @@ preserve
 	keep if povcut==1 & educ!=.
 	gcollapse (mean) avghrspov = annualhours [pw=perwt], by(year educ)
 	*merge collapsed hours for all educ categories v. those in poverty
-	decode educ, gen(educstr)
-	drop educ
-	reshape wide avghrspov, i(educstr) j(year)
-	merge 1:1 educstr using `allcoll', assert(3) nogenerate
-	export excel "${data}educ_hours.xls", firstrow(variable) replace
+	reshape wide avghrspov, i(educ) j(year)
+	merge 1:1 educ using `allcoll', assert(3) nogenerate
+	export excel "${data}educ_hours2.xls", firstrow(variable) replace
 restore
 
+
+/* Questions for Ben:
+
+1. Should we createa new poverty measure not based on family income, not household?
+
+*/

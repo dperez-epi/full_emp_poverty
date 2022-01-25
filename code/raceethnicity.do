@@ -6,22 +6,20 @@ Created by: 	Daniel Perez
 Purpose:    	Create simplified race/ethnicity variable
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
-gen wbhao = .
+gen wbho = .
 
-replace wbhao = 1 if race==1
-replace wbhao = 2 if race==2
-replace wbhao = 4 if race==4 | race==5 | race==6
-replace wbhao = 5 if race==3 | racesing==7 | race==8 | race==9
+replace wbho = 1 if race==1 & hispan==0
+replace wbho = 2 if race==2 & hispan==0
+replace wbho = 4 if race==3 | race==4 | race==5 |  race==6 | race==7 | race==8 | race==9 & hispan==0
 *hispanic
-replace wbhao = 3 if hispan!=0
+replace wbho = 3 if hispan!=0
 
-lab var wbhao "Race/ethnicity, including Asian"
+lab var wbho "Race/ethnicity, including Asian"
 #delimit ;
-lab define wbhao
+lab define wbho
 1 "White"
 2 "Black"
 3 "Hispanic"
-4 "Asian"
-5 "Other";
+4 "Other"
 #delimit cr
-lab val wbhao wbhao
+lab val wbho wbho

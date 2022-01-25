@@ -24,7 +24,7 @@
 . tempfile cpi 
 
 . save `cpi' 
-file /tmp/St18859.000001 saved
+file /tmp/St31894.000001 saved
 
 . 
 . *load ACS dataset
@@ -65,9 +65,6 @@ file /tmp/St18859.000001 saved
 . **************************************************************
 . * 3.1 Universe and variable creation
 . **************************************************************
-. 
-. *keep if in laborforce
-. *keep 
 . 
 . *Delineate poverty threshold using poverty variable
 . do acs_povcut.do
@@ -139,43 +136,36 @@ end of do-file
 > Purpose:        Create simplified race/ethnicity variable
 > ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 . 
-. gen wbhao = .
+. gen wbho = .
 (48,162,117 missing values generated)
 
 . 
-. replace wbhao = 1 if race==1
-(37,395,594 real changes made)
+. replace wbho = 1 if race==1 & hispan==0
+(33,419,258 real changes made)
 
-. replace wbhao = 2 if race==2
-(4,877,379 real changes made)
+. replace wbho = 2 if race==2 & hispan==0
+(4,750,729 real changes made)
 
-. replace wbhao = 4 if race==4 | race==5 | race==6
-(2,284,606 real changes made)
-
-. replace wbhao = 5 if race==3 | racesing==7 | race==8 | race==9
-(1,719,683 real changes made)
+. replace wbho = 4 if race==3 | race==4 | race==5 |  race==6 | race==7 | race==8 | race==9 & hispan==0
+(5,855,066 real changes made)
 
 . *hispanic
-. replace wbhao = 3 if hispan!=0
+. replace wbho = 3 if hispan!=0
 (6,319,712 real changes made)
 
 . 
-. lab var wbhao "Race/ethnicity, including Asian"
+. lab var wbho "Race/ethnicity, including Asian"
 
 . #delimit ;
 delimiter now ;
-. lab define wbhao
+. lab define wbho
 > 1 "White"
 > 2 "Black"
 > 3 "Hispanic"
-> 4 "Asian"
-> 5 "Other";
+> 4 "Other"
+> #delimit cr
+> lab val wbho wbho
 
-. #delimit cr
-delimiter now cr
-. lab val wbhao wbhao
-
-. 
 end of do-file
 
 . 
@@ -242,6 +232,16 @@ delimiter now cr
 end of do-file
 
 . 
+. svyset cluster [pweight=perwt], strata(strata)
+
+      pweight: perwt
+          VCE: linearized
+  Single unit: missing
+     Strata 1: strata
+         SU 1: cluster
+        FPC 1: <zero>
+
+. 
 . **************************************************************
 . * 3.2 Measuring income (from wages and salary) by family + quintiles
 . **************************************************************
@@ -258,14 +258,14 @@ end of do-file
 
 . 
 . *sum real wages within families
-. gegen rf_incwage = total(r_incwage), by(year serial famsize) missing
+. gegen rf_incwage = total(r_incwage), by(year serial famunit famsize) missing
 
 . label var rf_incwage "income from salary and wages summed over family size"
 
 . 
 . *transform real wages
 . gen rft_incwage = (rf_incwage / sqrt(famsize))
-(75,493 missing values generated)
+(98,240 missing values generated)
 
 . label var rft_incwage "Transformed family salary and wages"
 
@@ -304,11 +304,13 @@ delimiter now cr
 . * 3.3 Calculating hours and weeks worked per year, and usual hours per week by family
 . **************************************************************
 . 
-. *average weeks worked per year, by individuals
+. *drop missing values
 . mvdecode wkswork*, mv(0)
     wkswork1: 6398830 missing values generated
     wkswork2: 23071707 missing values generated
 
+. 
+. *generate average weeks worked per year, on individual level
 . gen avgwkswork =.
 (48,162,117 missing values generated)
 
@@ -329,10 +331,27 @@ delimiter now cr
 . replace avgwkswork = wkswork1 if year>=2000 & year<=2007
 (7,471,687 real changes made)
 
+. label var avgwkswork "Average weeks worked per year"
+
+. notes avgwkswork: 2000-2007: Continuous measure of weeks worked last year, wkswork1.
+
+. notes avgwkswork: 2008-2018: Midpoints of intervalled measure of weeks worked last year, wkswork2.
+
 . 
+. /*
+> **comparison of wkswork 1 and 2 between 2000-2007
+> 
+> gen avgwksinter = wkswork2 if year>=2000 & year<=2007
+> recode avgwksinter (1 = 7) (2 = 20) (3 = 33) (4 = 43.5) (5=48.5) (6=51)
+> label var avgwksinter "Intervalled test"
+> gen avgwkscont = wkswork1 if year>=2000 & year<=2007
+> label var avgwkscont "Continuous test"
+> gen contannual = avgwkscont * uhrswork
+> gen intannual = avgwksinter *uhrswork
+> */
 . 
 . *Usual hours worked per week, by family
-. gegen weeklyfamhours = total(uhrswork), by(year serial famsize) missing
+. gegen weeklyfamhours = total(uhrswork), by(year serial famunit famsize) missing
 
 . label var weeklyfamhours "Usual hours worked per week, by family"
 
@@ -345,7 +364,7 @@ delimiter now cr
 
 . 
 . *annual hours worked by family
-. gegen annual_famhours = total(annualhours), by(year serial famsize) missing
+. gegen annual_famhours = total(annualhours), by(year serial famunit famsize) missing
 
 . label var annual_famhours "Annual hours worked by family"
 
@@ -355,8 +374,8 @@ delimiter now cr
 > 
 > https://www.epi.org/data/methodology/
 > https://irle.berkeley.edu/files/2014/The-Impact-of-Oakland-data-and-methods.pdf
-> https://www.brookings.edu/wp-content/uploads/2019/11/201911_Brookings-Metro_low-wage-workforce_Ross-Bateman_TECHNICAL-APPEND
-> IX.pdf
+> https://www.brookings.edu/wp-content/uploads/2019/11/201911_Brookings-Metro_low-wage-workforce_Ross-Bate
+> man_TECHNICAL-APPENDIX.pdf
 > 
 > **************************************************************/
 . 
@@ -374,7 +393,7 @@ delimiter now cr
 
 . 
 . gen hrwage1 = rf_incwage / (annual_famhours) 
-(8,182,993 missing values generated)
+(8,338,824 missing values generated)
 
 . label var hrwage1 "Implied hourly family wages from wages and salary"
 

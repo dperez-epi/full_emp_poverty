@@ -1,0 +1,196 @@
+---
+title: "pov_full_emp"
+author: "Daniel Perez"
+date: "10/11/2021"
+output: html_document
+---
+
+```{r libraries, include=FALSE}
+library(tidyverse)
+library(epiextractr)
+library(epidatatools)
+library(labelled)
+library(here)
+library(blsAPI)
+library(openxlsx)
+```
+
+
+```{r Load data}
+#Load census 2020 poverty thresholds
+pov_thresh <- read_csv(here('input/povthresh20.csv'), col_names=TRUE) %>%
+  filter(over65==0) %>% 
+  select(-year)
+
+cpi <- read_csv(here('input/cpi.csv'), col_names=TRUE)
+cpi_base <- cpi$cpi_u_rs[cpi$year == '2020' & cpi$month=='12'] # Adjust all to Dec 2020 $
+
+
+cps <-load_basic(2020, year, month, ftptstat, selfemp, personid, hhid, hrhhid, hrhhid2, hhtype, famtype, famid, famrel, ownchild, agechild, wage, weekpay, ind17, mind03, occ18, hourslwt, paidhre, emp, lfstat, dlfstat, orgwgt, age, female, wbhao, faminc, minsamp, basicwgt, finalwgt) %>% 
+  filter(minsamp %in% c(4,8), age>=16, month %in% c(6)) %>% #keep only those interviewed in the ORG, non-elderly
+  left_join(cpi, by=c('year', 'month')) %>%   #merge CPI data
+  mutate(inflat_12_2020 = (cpi_base/cpi_u_rs)-1,
+         realweekpay = weekpay*(cpi_base/cpi_u_rs),  #inflation adjust to wages to dec 2020$
+         realyearpay = realweekpay*52,
+         wgt = ifelse(age<16, yes=finalwgt, no=orgwgt), #create a new weight
+         headratio = ifelse(famrel==1, yes=wgt/finalwgt, no=NA), #create ratio for primary respondent
+         realyearpay = replace(realyearpay, emp==1 & is.na(hourslwt), 0),
+         realweekpay = replace(realweekpay, emp==1 & is.na(hourslwt), 0),
+         under18 = ifelse(age<18, yes=1, no=0)) %>% 
+  set_value_labels(under18 = c('under 18'= 1, 'over 18'=0),
+                   month = c('Jan' = 1, 'Feb' = 2, 'Mar' = 3, 'Apr' = 4,
+                             'May' = 5, 'Jun' = 6, 'Jul' = 7, 'Aug' = 8,
+                             'Sept' = 9, 'Oct' = 10, 'Nov' = 11, 'Dec' = 12))
+```
+
+
+```{r Clean CPS Basic}
+thedata <- cps %>%
+  group_by(year, month, hrhhid, hrhhid2) %>%
+  mutate(group_id = cur_group_id()) %>% # give each family an ID
+  ungroup %>% 
+  group_by(group_id) %>% 
+  mutate(children = ifelse((age<18), yes=1, no=0)) %>% 
+  mutate(selfemp_pop = sum(selfemp==1, na.rm=TRUE), #count self employed in each family
+         emp_pop = sum(emp==1, na.rm=TRUE)) %>% 
+  filter(!(emp_pop==selfemp_pop)) %>% # remove families where all workers are self-employed
+  mutate(children=sum(children),
+         famsize=n(),
+         headratio = headratio[!is.na(headratio)][1], # assign ratio of head respondent to family
+         wgt2 = ifelse(age<16, yes=finalwgt*headratio, no=orgwgt)) %>% # create weights for <16yo
+  mutate(rtotweekpay = sum(realweekpay, na.rm=TRUE),
+         rtotyearpay = sum(realyearpay, na.rm=TRUE)) %>% #count family's real annual pay
+  left_join(pov_thresh, by=c('famsize','children')) %>% #merge census poverty threshold data
+  mutate(rpov_thresh = pov_thresh*(cpi_base/cpi_u_rs), #inflation adjust poverty thresholds
+         rweekpov_thresh = (rpov_thresh/52)) %>%
+  mutate(inpoverty = ifelse((rtotweekpay<rweekpov_thresh), yes=1, no=0), #Create an indicator for folks in poverty
+         povlevel = round((rtotyearpay/rpov_thresh)*100)) %>% #create poverty measure
+  ungroup() %>% 
+  mutate(noincome = ifelse(povlevel==0 & !is.na(povlevel), yes=1, no=0)) %>% #count folks w/no income
+  set_value_labels(noincome = c('No income'= 1, 'With income'= 0))
+
+
+```
+
+
+```{r Poverty counts}
+povcount_all <- thedata %>% 
+  group_by(year, month) %>% 
+  summarize(wgt_n = sum(inpoverty * wgt2, na.rm=TRUE),
+            share = weighted.mean(inpoverty, wt=wgt2, na.rm=TRUE),
+            n = n()) %>% 
+  mutate(group='Poverty, all',
+         poverty_earnings='All')
+
+povcount_wbhao <- thedata %>% 
+  group_by(year, month, wbhao) %>% 
+  summarize(wgt_n = sum(inpoverty * wgt2, na.rm=TRUE),
+            share = weighted.mean(inpoverty, wt=wgt2, na.rm=TRUE),
+            n = n()) %>% 
+  mutate(wbhao = to_factor(wbhao)) %>% 
+  mutate(group='Poverty, wbhao') %>% 
+  rename(poverty_earnings=wbhao)
+
+povcount_age <- thedata %>% 
+  group_by(year, month, under18) %>% 
+    summarize(wgt_n= sum(inpoverty*wgt2, na.rm=TRUE),
+              share = weighted.mean(inpoverty, wt=wgt2, na.rm=TRUE),
+              n=n()) %>% 
+  mutate(under18 = as.character(to_factor(under18))) %>% 
+  filter(under18=='under 18') %>% 
+  mutate(group='Poverty, age') %>% 
+  rename(poverty_earnings = under18)
+
+noincome_all <- thedata %>% 
+  group_by(year, month) %>% 
+  summarize(wgt_n = sum(noincome * wgt2, na.rm=TRUE),
+            share = weighted.mean(noincome, wt=wgt2, na.rm=TRUE),
+            n = n()) %>% 
+  mutate(group='No income, all',
+         zero_earnings = 'All')
+
+noincome_wbhao <- thedata %>% 
+  mutate(wbhao=as_factor(wbhao)) %>% 
+  group_by(year, month, wbhao) %>% 
+  summarize(wgt_n = sum(noincome * wgt2, na.rm=TRUE),
+            share = weighted.mean(noincome, wt=wgt2, na.rm=TRUE),
+            n = n()) %>% 
+  mutate(group='No income, wbhao') %>% 
+  rename(zero_earnings = wbhao)
+
+noincome_age <- thedata %>% 
+  group_by(year, month, under18) %>% 
+    summarize(wgt_n = sum(noincome * wgt2, na.rm=TRUE),
+              share = weighted.mean(noincome, wt=wgt2, na.rm=TRUE),
+              n=n()) %>% 
+  mutate(under18 = as.character(to_factor(under18))) %>% 
+  filter(under18=='under 18') %>% 
+  mutate(group='No income, age') %>% 
+  rename(zero_earnings = under18)
+
+```
+
+```{r Formatted tables}
+#bind poverty tables
+fams_in_poverty_count <- bind_rows(povcount_all,povcount_age, povcount_wbhao) %>% 
+  mutate(month = to_factor(month)) %>%
+  pivot_wider(id_cols = poverty_earnings, names_from = c(month,year), values_from = wgt_n) %>% 
+  mutate(feb_to_jun_pct = (Jun_2020/Feb_2020)-1)
+
+fams_in_poverty_share <- bind_rows(povcount_all,povcount_age, povcount_wbhao) %>% 
+  mutate(month = to_factor(month)) %>%
+  pivot_wider(id_cols = poverty_earnings, names_from = c(month,year), values_from = share) %>% 
+  mutate(feb_to_jun_ppt = (Jun_2020/Feb_2020)-1)
+
+#bind zero income tables
+fams_no_income_count <- bind_rows(noincome_all, noincome_age, noincome_wbhao) %>% 
+  mutate(month = to_factor(month)) %>%
+  pivot_wider(id_cols = zero_earnings, names_from = c(month,year), values_from = wgt_n) %>% 
+  mutate(feb_to_jun_pct = (Jun_2020/Feb_2020)-1)
+
+
+fams_no_income_share <- bind_rows(noincome_all, noincome_age, noincome_wbhao) %>% 
+  mutate(month = to_factor(month)) %>%
+  pivot_wider(id_cols = zero_earnings, names_from = c(month,year), values_from = share) %>% 
+  mutate(feb_to_jun_ppt = (Jun_2020/Feb_2020)-1)
+
+table1 <- bind_rows(fams_in_poverty_count, fams_no_income_count) %>% 
+  relocate(zero_earnings, .after=poverty_earnings) %>% 
+  mutate(Feb_2020 = Feb_2020/1000000,
+         Apr_2020 = Apr_2020/1000000,
+         Jun_2020 = Jun_2020/1000000)
+table2 <- bind_rows(fams_in_poverty_share, fams_no_income_share) %>% 
+    relocate(zero_earnings, .after=poverty_earnings)
+```
+
+
+```{r Workbook export}
+pov <- createWorkbook()
+
+addWorksheet(pov, sheetName = "Table 1")
+addWorksheet(pov, sheetName = "Table 2")
+
+pct = createStyle(numFmt = '0.0%')
+acct = createStyle(numFmt = '#.0' )
+hs1 <- createStyle(fgFill = "#4F81BD", halign = "CENTER", textDecoration = "Bold",
+                   border = "Bottom", fontColour = "white")
+
+writeData(pov, headerStyle = hs1, table1, sheet = "Table 1",
+          startCol = 1, startRow = 1, colNames = TRUE)
+writeData(pov, table2, headerStyle = hs1, sheet = "Table 2",
+          startCol = 1, startRow = 1, colNames = TRUE)
+
+#add percent format
+addStyle(pov, "Table 1", style=pct, cols=6, rows=2:(nrow(table1)+1), gridExpand=TRUE)
+addStyle(pov, "Table 2", style=pct, cols=c(3:6), rows=2:(nrow(table2)+1), gridExpand=TRUE)
+
+#add accounting format
+addStyle(pov, "Table 1", style=acct, cols=c(3:5), rows=2:(nrow(table1)+1), gridExpand=TRUE)
+
+
+saveWorkbook(pov, here("/data/poverty_workbook.xlsx"), overwrite = TRUE)
+```
+
+
+
+
