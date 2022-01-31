@@ -4,10 +4,9 @@
 *.xlsx
 *.xls
 *.do
-*.csv
+pub_spm_master.csv
 .Rproj.user
 *.feather
 .RData
 .Rhistory
-
 *.Rproj
