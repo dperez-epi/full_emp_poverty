@@ -3,10 +3,10 @@
 *.txt
 *.xlsx
 *.xls
-*.do
+*.csv
+.do
 pub_spm_master.csv
 *.feather
 *.Rproj.user
-*.csv
 *.Rhistory
 *.RData
