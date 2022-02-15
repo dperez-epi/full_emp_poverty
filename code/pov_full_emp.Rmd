@@ -26,13 +26,14 @@ cpi <- read_csv(here('input/cpi.csv'), col_names=TRUE)
 cpi_base <- cpi$cpi_u_rs[cpi$year == '2020' & cpi$month=='12'] # Adjust all to Dec 2020 $
 
 
-cps <-load_basic(2020, year, month, ftptstat, selfemp, personid, hhid, hrhhid, hrhhid2, hhtype, famtype, famid, famrel, ownchild, agechild, wage, weekpay, ind17, mind03, occ18, hourslwt, paidhre, emp, lfstat, dlfstat, orgwgt, age, female, wbhao, faminc, minsamp, basicwgt, finalwgt) %>% 
-  filter(minsamp %in% c(4,8), age>=16, month %in% c(6)) %>% #keep only those interviewed in the ORG, non-elderly
+cps <-load_basic(2020, year, month, ftptstat, selfemp, personid, hhid, hrhhid, hrhhid2, hhtype, famtype, famid, famrel, ownchild, agechild, wage, weekpay, ind17, mind03, occ18, hourslwt, paidhre, emp, lfstat, dlfstat, orgwgt, age, female, wbhao, faminc, minsamp, basicwgt, finalwgt, cow1) %>% 
+  filter(minsamp %in% c(4,8), age>=16) %>%
+  mutate(wgt = orgwgt/12) %>% #keep only those interviewed in the ORG, non-elderly
   left_join(cpi, by=c('year', 'month')) %>%   #merge CPI data
-  mutate(inflat_12_2020 = (cpi_base/cpi_u_rs)-1,
+  mutate(inflation_dec2020 = (cpi_base/cpi_u_rs)-1,
          realweekpay = weekpay*(cpi_base/cpi_u_rs),  #inflation adjust to wages to dec 2020$
          realyearpay = realweekpay*52,
-         wgt = ifelse(age<16, yes=finalwgt, no=orgwgt), #create a new weight
+         all_wgt = ifelse(age<16, yes=finalwgt, no=orgwgt), #create a new weight
          headratio = ifelse(famrel==1, yes=wgt/finalwgt, no=NA), #create ratio for primary respondent
          realyearpay = replace(realyearpay, emp==1 & is.na(hourslwt), 0),
          realweekpay = replace(realweekpay, emp==1 & is.na(hourslwt), 0),
@@ -42,6 +43,24 @@ cps <-load_basic(2020, year, month, ftptstat, selfemp, personid, hhid, hrhhid, h
                              'May' = 5, 'Jun' = 6, 'Jul' = 7, 'Aug' = 8,
                              'Sept' = 9, 'Oct' = 10, 'Nov' = 11, 'Dec' = 12))
 ```
+
+```{r CBPP benchmark}
+#benchmarked
+adults <- cps %>% 
+  summarize(adults_16plus = sum(wgt, na.rm=TRUE),
+            adults_pwages = sum(wgt[weekpay>0], na.rm=TRUE),
+            n = n())
+
+adults_month <- cps %>% 
+  filter(month==6) %>% 
+  group_by(month) %>% 
+  summarize(adults_16plus = sum(orgwgt, na.rm=TRUE),
+            adults_elig = sum(orgwgt[cow1 %in% c(1,2)]),
+            adult_pos_earn = sum(orgwgt[weekpay>0], na.rm=TRUE),
+            n = n())
+
+```
+
 
 
 ```{r Clean CPS Basic}

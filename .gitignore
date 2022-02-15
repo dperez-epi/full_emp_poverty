@@ -5,8 +5,8 @@
 *.xls
 *.do
 pub_spm_master.csv
-.Rproj.user
 *.feather
-.RData
-.Rhistory
-*.Rproj
+*.Rproj.user
+*.csv
+*.Rhistory
+*.RData

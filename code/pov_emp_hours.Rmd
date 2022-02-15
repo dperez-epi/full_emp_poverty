@@ -23,67 +23,143 @@ library(statar)
 cpi <- read_csv(here("input/cpi_annual.csv")) 
 cpi_base <- cpi$cpiurs[cpi$year == 2019] 
 
-cpsorg <-load_org(2009:2019, year, month, orgwgt, statefips, age, emp, selfemp, selfinc,
-                  hourslwt, hourslw1, hourslw2, multjobs, hoursuorg, lfstat, earnhour, wage, weekpay) %>%
+cpsorg <-load_org(2009:2019, year, month, orgwgt, statefips, age, emp, selfemp, selfinc, hourslw1, multjobs, hoursuorg, lfstat, wage, earnhour) %>%
   filter(age>=16) %>%
+  mutate(wgt = orgwgt/12) %>% 
+  mutate(selfemp0 = ifelse(selfemp==1 & !is.na(selfemp), yes=1, no=0),
+         selfinc0 = ifelse(selfinc==1 & !is.na(selfinc), yes=1, no=0)) %>% 
+  filter(selfemp0==0, selfemp0==0) %>% 
   left_join(cpi, by='year') %>% 
+  mutate(wgt = orgwgt/12) %>% 
   mutate(phours1 = ifelse(hourslw1>0 & !is.na(hourslw1), yes=1, no=0),
-         phourst = ifelse(hourslwt>0 & !is.na(hourslwt), yes=1, no=0),
+         weekpay = wage * hourslw1,
          realwage = wage*(cpi_base/cpiurs),
-         realweekpay = weekpay*(cpi_base/cpiurs),
-         pwages = ifelse(realwage>0 & !is.na(realwage) , yes=1, no=0),
          realwage0 = replace(realwage, emp==0, 0),
+         realweekpay = weekpay*(cpi_base/cpiurs),
+         realweekpay0 = replace(realweekpay, emp==0, 0),
+         pwages = ifelse(realwage0>0 & !is.na(realwage0) , yes=1, no=0),
+         pweekpay = ifelse(realweekpay0>0 & !is.na(realweekpay0) , yes=1, no=0),
          hourslw0 = replace(hourslw1, emp==0, 0)) %>%   #inflation adjust to wages to 2019$ 
   mutate(selfemp0 = ifelse(selfemp==1 & !is.na(selfemp), yes=1, no=0),
          selfinc0 = ifelse(selfinc==1 & !is.na(selfinc), yes=1, no=0)) %>% 
   set_value_labels(pwages = c('Positive wages' = 1, 'Zero wages' = 0),
-                   phours1 = c('Positive hours, primary job' = 1, 'Zero hours' =0),
-                   phourst = c('Positive hours, total'=1, 'Zero hours' = 0))
+                   pweekpay = c('Positive weekpay' = 1, 'Zero weekpay' = 0),
+                   phours1 = c('Positive hours, primary job' = 1, 'Zero hours' =0))
+
+# count(cpsorg, pweekpay, emp)
+
 ```
 
-```{r Refined sample}
+As a note, we want to remove self employed / self incorporated folks because they do not report wages / hours despite being employed. We do want to keep non-self emp/inc folks though, including those who are just NILF or selfemp/selfinc==NA, because we want to turn them into NILF workers with zero wages/hours
 
-cps <- cpsorg %>% 
+```{r Refined sample}
+set.seed(2)
+
+cps_filtered <- cpsorg %>% 
   filter(selfemp0==0, selfemp0==0) %>% 
-  filter((emp==1 & phours1== 1 & pwages==1) | (emp==0 & phours1==0 & pwages==0))
+  filter((emp==1 & phours1== 1 & pweekpay==1) | (emp==0 & phours1==0 & pweekpay==0)) %>% 
+  mutate(weekpay_rndm = ifelse(realweekpay0==0, yes = rnorm(nrow(.), mean = -10, sd = 1), no=realweekpay0)) %>% 
+  mutate(quints = xtile(weekpay_rndm, n = 2, wt = orgwgt/12))
   
+
+
+```
+
+```{r ptiles merged to CPS}
+
+quintiles <- cps_filtered %>% 
+  filter(age<65) %>% 
+  group_by(year) %>% 
+  summarize(avg_wage_all = weighted.mean(weekpay_rndm, w=orgwgt/12, na.rm=TRUE),
+            ptile20 = weighted_quantile(weekpay_rndm, w = orgwgt/12, probs = 0.20, na.rm=TRUE),
+            ptile40 = weighted_quantile(weekpay_rndm, w = orgwgt/12, probs = 0.40, na.rm=TRUE),
+            ptile50 = weighted_quantile(weekpay_rndm, w = orgwgt/12, probs = 0.50, na.rm=TRUE),
+            ptile60 = weighted_quantile(weekpay_rndm, w = orgwgt/12, probs = 0.60, na.rm=TRUE),
+            ptile80 = weighted_quantile(weekpay_rndm, w = orgwgt/12, probs = 0.80, na.rm=TRUE),
+            n=n())
+
+ptile50 <- cps_filtered %>% 
+  filter(age<65) %>% 
+  group_by(year) %>% 
+  summarize(ptile50 = weighted_quantile(weekpay_rndm, w = orgwgt/12, probs = 0.50, na.rm=TRUE),
+            n=n())
+
+cps_quants <- cps_filtered %>% 
+  inner_join(quintiles, by='year') %>% 
+  mutate(bins = ifelse(realweekpay0 <= ptile20, 1,
+                       ifelse((realweekpay0 > ptile20 & realweekpay0 <= ptile40), 2,
+                              ifelse((realweekpay0 > ptile40 & realweekpay0 <= ptile60), 3,
+                                     ifelse((realweekpay0 > ptile60 & realweekpay0 <= ptile80), 4, 5))))) 
+
+cps_medians <- cps_filtered %>% 
+  inner_join(ptile50, by='year') %>% 
+  mutate(bins = ifelse(realweekpay0 > ptile50, yes=1, no = 0))
+
+
+```
+
+
+```{r ptiles merged to CPS}
+
+quantiles_real <- cps_filtered %>% 
+  filter(age<65) %>% 
+  group_by(year) %>% 
+  summarize(avg_wage_all = weighted.mean(realweekpay0, w=orgwgt/12, na.rm=TRUE),
+            ptile20 = weighted_quantile(realweekpay0, w = orgwgt/12, probs = 0.20, na.rm=TRUE),
+            ptile40 = weighted_quantile(realweekpay0, w = orgwgt/12, probs = 0.40, na.rm=TRUE),
+            ptile50 = weighted_quantile(realweekpay0, w = orgwgt/12, probs = 0.50, na.rm=TRUE),
+            ptile60 = weighted_quantile(realweekpay0, w = orgwgt/12, probs = 0.60, na.rm=TRUE),
+            ptile80 = weighted_quantile(realweekpay0, w = orgwgt/12, probs = 0.80, na.rm=TRUE),
+            n=n())
+
+ptile50_real <- cps_filtered %>% 
+  filter(age<65) %>% 
+  group_by(year) %>% 
+  summarize(ptile50 = weighted_quantile(realweekpay0, w = orgwgt/12, probs = 0.50, na.rm=TRUE),
+            n=n())
+
+cps_quants_real <- cps_filtered %>% 
+  inner_join(quantiles, by='year') %>% 
+  mutate(bins = ifelse(realweekpay0 <= ptile20, 1,
+                       ifelse((realweekpay0 > ptile20 & realweekpay0 <= ptile40), 2,
+                              ifelse((realweekpay0 > ptile40 & realweekpay0 <= ptile60), 3,
+                                     ifelse((realweekpay0 > ptile60 & realweekpay0 <= ptile80), 4, 5))))) 
+
+cps_medians_real <- cps_filtered %>% 
+  inner_join(ptile50, by='year') %>% 
+  mutate(bins = ifelse(realweekpay0 > ptile50, yes=1, no = 0))
+
+
 ```
 
 ```{r Average hourly wages of employed }
-hrly_wages <- cpsorg %>% 
-  filter(pwages==1) %>% 
-  group_by(year) %>% 
-  summarize(wages_all = weighted.mean(realwage, w=orgwgt/12, na.rm=TRUE),
-            ptile20 = weighted_quantile(realwage, w = orgwgt/12, probs = 0.20, na.rm=TRUE),
-            ptile40 = weighted_quantile(realwage, w = orgwgt/12, probs = 0.40, na.rm=TRUE),
-            ptile50 = weighted_quantile(realwage, w = orgwgt/12, probs = 0.50, na.rm=TRUE),
-            ptile60 = weighted_quantile(realwage, w = orgwgt/12, probs = 0.60, na.rm=TRUE),
-            ptile80 = weighted_quantile(realwage, w = orgwgt/12, probs = 0.80, na.rm=TRUE))
+metrics <- cps_quants %>%
+  filter(age<65) %>% 
+  group_by(year, bins) %>% 
+  summarize(avg_hrly_pay = weighted.mean(realwage0, w = orgwgt/12, na.rm=TRUE),
+            avg_weekpay = weighted.mean(realweekpay0, w=orgwgt/12, na.rn=TRUE),
+            avg_hrs = weighted.mean(hourslw0, na.rm=TRUE),
+            share_positive_hours = mean(phours1, na.rm=TRUE),
+            n=n(),
+            wgt_n = sum(orgwgt/12),
+            cutoffs = max(realweekpay0)) %>% 
+  pivot_wider(id_cols = year, names_from = bins, values_from = c(avg_hrly_pay, avg_weekpay, avg_hrs, n, wgt_n, cutoffs))# %>% 
+  write_csv(here('data/metrics.csv'), col_names = TRUE)
 
-weeklywages <- cpsorg %>% 
-  filter(emp==1, pwages==1, selfemp==0, selfinc==0) %>% 
-  group_by(year) %>%
-  summarize(weekpay_all = weighted.mean(realweekpay, w=orgwgt/12, na.rm=TRUE),
-            ptile20 = weighted_quantile(realweekpay, w = orgwgt/12, probs = 0.20, na.rm=TRUE),
-            ptile40 = weighted_quantile(realweekpay, w = orgwgt/12, probs = 0.40, na.rm=TRUE),
-            ptile50 = weighted_quantile(realweekpay, w = orgwgt/12, probs = 0.50, na.rm=TRUE),
-            ptile60 = weighted_quantile(realweekpay, w = orgwgt/12, probs = 0.60, na.rm=TRUE),
-            ptile80 = weighted_quantile(realweekpay, w = orgwgt/12, probs = 0.80, na.rm=TRUE))
+metrics50 <- cps_medians %>%
+  filter(age<65) %>% 
+  group_by(year, bins) %>% 
+  summarize(avg_hrly_pay = weighted.mean(realwage0, w = orgwgt/12, na.rm=TRUE),
+            avg_weekpay = weighted.mean(realweekpay0, w=orgwgt/12, na.rn=TRUE),
+            avg_hrs = weighted.mean(hourslw0, na.rm=TRUE),
+            share_positive_hours = mean(phours1, na.rm=TRUE),
+            n=n(),
+            wgt_n = sum(orgwgt/12),
+            epop = weighted.mean(emp, w=orgwgt/12, na.rm=TRUE),
+            cutoffs = max(realwage0)) %>% 
+  pivot_wider(id_cols = year, names_from = bins, values_from = c(avg_hrly_pay, avg_weekpay, avg_hrs, n, wgt_n, epop, cutoffs))# %>% 
+  write_csv(here('data/metrics2.csv'), col_names = TRUE)
 
-avg_hours <- cpsorg %>% 
-  filter(selfemp==0, selfinc==0) %>% 
-  group_by(year) %>% 
-  summarize(hours_all = weighted.mean(hourslw1, w=orgwgt/12, na.rm=TRUE),
-            ptile20 = weighted_quantile(hourslw1, w = orgwgt/12, probs = 0.20, na.rm=TRUE),
-            ptile40 = weighted_quantile(hourslw1, w = orgwgt/12, probs = 0.40, na.rm=TRUE),
-            ptile50 = weighted_quantile(hourslw1, w = orgwgt/12, probs = 0.50, na.rm=TRUE),
-            ptile60 = weighted_quantile(hourslw1, w = orgwgt/12, probs = 0.60, na.rm=TRUE),
-            ptile80 = weighted_quantile(hourslw1, w = orgwgt/12, probs = 0.80, na.rm=TRUE))
-```
-
-```{r}
-set.seed(197)
-test <- rnorm(8000, mean=-4, sd=1)
 ```
 
 
@@ -109,7 +185,7 @@ phours_pwages_by_empstat_raw <- cpsorg %>%
   ungroup() %>% 
   mutate(across(pwages|phours1|emp, ~ to_factor(.x))) 
 
-phours_pwages_by_empstat_raw_under65 <- cps %>% 
+phours_pwages_by_empstat_raw_under65 <- cps_filtered %>% 
   filter(selfemp0==0, selfinc0==0, age<65) %>%
   group_by(year, emp, pwages, phours1) %>% 
   summarize(n = n(),
@@ -119,10 +195,9 @@ phours_pwages_by_empstat_raw_under65 <- cps %>%
          freq_wgt = wgt_n/sum(wgt_n)) %>% 
   ungroup() %>% 
   mutate(across(pwages|phours1|emp, ~ to_factor(.x))) %>% 
-  arrange(year,-n, wgt_n) %>% 
-  write_csv(here('data/samples_under65.csv'), col_names = TRUE)
+  arrange(year,-n, wgt_n)
 
-phours_pwages_by_empstat_raw_16plus <- cps %>% 
+phours_pwages_by_empstat_raw_16plus <- cps_filtered %>% 
   filter(selfemp0==0, selfinc0==0, age<65) %>%
   group_by(year, emp, pwages, phours1) %>% 
   summarize(n = n(),
@@ -132,20 +207,13 @@ phours_pwages_by_empstat_raw_16plus <- cps %>%
          freq_wgt = wgt_n/sum(wgt_n)) %>% 
   ungroup() %>% 
   mutate(across(pwages|phours1|emp, ~ to_factor(.x))) %>% 
-  arrange(year,-n, wgt_n) %>% 
-  write_csv(here('data/samples_16plus.csv'), col_names = TRUE)
-
-self_emp <- cpsorg %>% 
-  mutate(selfemp = to_factor(selfemp)) %>% 
-  group_by(year,selfemp) %>% 
-  tally()
+  arrange(year,-n, wgt_n)
 
 ```
 
 
-
 ```{r Hours and wages with zeros}
-hrly_wage0_under65 <- cps %>%
+hrly_wage0_under65 <- cps_filtered %>%
   filter(age<65) %>% 
   group_by(year) %>% 
   summarize(avg_wage_all = weighted.mean(realwage0, w=orgwgt/12, na.rm=TRUE),
@@ -158,7 +226,7 @@ hrly_wage0_under65 <- cps %>%
             share_positive_wages = weighted.mean(pwages, w = orgwgt/12, na.rm=TRUE))# %>% 
   pivot_longer(!c(year,avg_wage_all), names_to = 'wage_quantile', values_to = 'cutoff')
 
-hrly_wage0_16plus <- cps %>%
+hrly_wage0_16plus <- cps_filtered %>%
   group_by(year) %>% 
   summarize(wages_all = weighted.mean(realwage0, w=orgwgt/12, na.rm=TRUE),
             ptile20 = weighted_quantile(realwage0, w = orgwgt/12, probs = 0.20, na.rm=TRUE),
@@ -168,7 +236,7 @@ hrly_wage0_16plus <- cps %>%
             ptile80 = weighted_quantile(realwage0, w = orgwgt/12, probs = 0.80, na.rm=TRUE),
             share_positive_wages = weighted.mean(pwages, w = orgwgt/12, na.rm=TRUE))
 
-hrs_wgs_under65 <- cps %>% 
+hrs_wgs_under65 <- cps_filtered %>% 
   filter(age<65) %>% 
   group_by(year) %>%
   mutate(wage_rank = xtile(realwage0, n=5, wt=orgwgt/12)) %>% 
@@ -178,7 +246,7 @@ hrs_wgs_under65 <- cps %>%
             avg_hrs = mean(hourslw0, na.rm=TRUE),
             n=n())
 
-hrs_wgs_16plus <- cps %>% 
+hrs_wgs_16plus <- cps_filtered %>% 
   group_by(year) %>%
   mutate(wage_rank = xtile(realwage0, n=5, wt=orgwgt/12)) %>% 
   group_by(year, wage_rank) %>% 
@@ -187,7 +255,7 @@ hrs_wgs_16plus <- cps %>%
             avg_hrs = mean(hourslw0, na.rm=TRUE),
             n=n())
 
-hrs_wgs_under65_wgt <- cps %>% 
+hrs_wgs_under65_wgt <- cps_filtered %>% 
   filter(age<65) %>% 
   group_by(year) %>%
   mutate(wage_rank = xtile(realwage0, n=5, wt=orgwgt/12)) %>% 
@@ -198,7 +266,7 @@ hrs_wgs_under65_wgt <- cps %>%
             n=n(),
             wgt_n = sum(orgwgt/12))
 
-hrs_wgs_16plus_wgt <- cps %>% 
+hrs_wgs_16plus_wgt <- cps_filtered %>% 
   group_by(year) %>%
   mutate(wage_rank = xtile(realwage0, n=5, wt=orgwgt/12)) %>% 
   group_by(year, wage_rank) %>% 
@@ -207,32 +275,6 @@ hrs_wgs_16plus_wgt <- cps %>%
             cutoffs = max(realwage0, na.rm=TRUE),
             avg_hrs = mean(hourslw0, na.rm=TRUE),
             n=n())
-
-stats_under65 <- cps %>% 
-  filter(age<65) %>% 
-  group_by(year) %>%
-  mutate(wage_rank = xtile(realwage0, n=5, wt=orgwgt/12)) %>% 
-  group_by(year) %>% 
-  summarize(employment = weighted.mean(emp, w=orgwgt/12, na.rm=TRUE),
-            positive_hours = weighted.mean(phours1, w=orgwgt/12, na.rm=TRUE),
-            positive_wages = weighted.mean(pwages, w=orgwgt/12, na.rm=TRUE),
-            n=n())
-
-stats_16plus <- cps %>% 
-  group_by(year) %>%
-  mutate(wage_rank = xtile(realwage0, n=5, wt=orgwgt/12)) %>% 
-  group_by(year) %>% 
-  summarize(employment = weighted.mean(emp, w=orgwgt/12, na.rm=TRUE),
-            positive_hours = weighted.mean(phours1, w=orgwgt/12, na.rm=TRUE),
-            positive_wages = weighted.mean(pwages, w=orgwgt/12, na.rm=TRUE),
-            n=n())
-
-employment <- cps %>% 
-  mutate(wage_rank = xtile(realwage0, n=5, wt=orgwgt/12)) %>% 
-  group_by(wage_rank) %>% 
-  summarize(employment = weighted.mean(emp, w=orgwgt/12, na.rm=TRUE))
-
-
 ```
 
 
