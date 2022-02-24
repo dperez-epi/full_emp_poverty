@@ -23,47 +23,107 @@ library(statar)
 cpi <- read_csv(here("input/cpi_annual.csv")) 
 cpi_base <- cpi$cpiurs[cpi$year == 2019] 
 
-cpsorg <-load_org(2009:2019, year, month, orgwgt, statefips, age, emp, selfemp, selfinc, hourslw1, multjobs, hoursuorg, lfstat, wage, earnhour) %>%
+#1994 is the lower bound year since hoursu1i is available 1994-present 
+cpsorg <-load_org(1994:2019, year, month, orgwgt, hhid, personid, statefips, age, emp, selfemp, selfinc, hourslw1, hoursu1i, multjobs, lfstat, wage, earnhour) %>%
   filter(age>=16) %>%
   mutate(wgt = orgwgt/12) %>% 
+  #create new version of selfemp/selfinc to exclude self employer workers
   mutate(selfemp0 = ifelse(selfemp==1 & !is.na(selfemp), yes=1, no=0),
          selfinc0 = ifelse(selfinc==1 & !is.na(selfinc), yes=1, no=0)) %>% 
   filter(selfemp0==0, selfemp0==0) %>% 
+  #Merge CPI-U-RS data
   left_join(cpi, by='year') %>% 
-  mutate(wgt = orgwgt/12) %>% 
-  mutate(phours1 = ifelse(hourslw1>0 & !is.na(hourslw1), yes=1, no=0),
-         weekpay = wage * hourslw1,
-         realwage = wage*(cpi_base/cpiurs),
-         realwage0 = replace(realwage, emp==0, 0),
-         realweekpay = weekpay*(cpi_base/cpiurs),
+  mutate(realwage = wage*(cpi_base/cpiurs), # inflation adjust wages to 2019$
+         realwage0 = replace(realwage, emp==0, 0), #Set unemployed workers' wages to 0
+         realweekpay = realwage0 * hoursu1i, #generate a weekly pay variable
          realweekpay0 = replace(realweekpay, emp==0, 0),
-         pwages = ifelse(realwage0>0 & !is.na(realwage0) , yes=1, no=0),
-         pweekpay = ifelse(realweekpay0>0 & !is.na(realweekpay0) , yes=1, no=0),
-         hourslw0 = replace(hourslw1, emp==0, 0)) %>%   #inflation adjust to wages to 2019$ 
-  mutate(selfemp0 = ifelse(selfemp==1 & !is.na(selfemp), yes=1, no=0),
-         selfinc0 = ifelse(selfinc==1 & !is.na(selfinc), yes=1, no=0)) %>% 
+         pwages = ifelse(realwage0>0 & !is.na(realwage0) , yes=1, no=0), #create positive wage indicator
+         pweekpay = ifelse(realweekpay0>0 & !is.na(realweekpay0) , yes=1, no=0), #create positive weekpay indicator
+         hoursu1i = replace(hoursu1i, emp==0, 0), #Set hours to 0 if unemployed
+         phours1 = ifelse(hoursu1i>0 & !is.na(hoursu1i), yes=1, no=0)) %>%  #create positive hours indicator
   set_value_labels(pwages = c('Positive wages' = 1, 'Zero wages' = 0),
                    pweekpay = c('Positive weekpay' = 1, 'Zero weekpay' = 0),
                    phours1 = c('Positive hours, primary job' = 1, 'Zero hours' =0))
-
-# count(cpsorg, pweekpay, emp)
 
 ```
 
 As a note, we want to remove self employed / self incorporated folks because they do not report wages / hours despite being employed. We do want to keep non-self emp/inc folks though, including those who are just NILF or selfemp/selfinc==NA, because we want to turn them into NILF workers with zero wages/hours
 
-```{r Refined sample}
-set.seed(2)
+```{r Quintile and Median analysis}
+
+set.seed(1017)
 
 cps_filtered <- cpsorg %>% 
-  filter(selfemp0==0, selfemp0==0) %>% 
+  filter(selfemp0==0, selfemp0==0, age<65) %>% 
   filter((emp==1 & phours1== 1 & pweekpay==1) | (emp==0 & phours1==0 & pweekpay==0)) %>% 
-  mutate(weekpay_rndm = ifelse(realweekpay0==0, yes = rnorm(nrow(.), mean = -10, sd = 1), no=realweekpay0)) %>% 
-  mutate(quints = xtile(weekpay_rndm, n = 2, wt = orgwgt/12))
-  
+  mutate(index = runif(nrow(.), min = 0, max=1)) %>%  #assign each observation a random # between 0 and 1
+  arrange(year, realweekpay0, index) %>%  # sort by year, real weekly pay, and index (might be unnecessary)?
+  group_by(year) %>% 
+  mutate(cumsum = cumsum(orgwgt/12), #column with cumulative sum of org weight
+         pop = sum(orgwgt/12), #column with total pop in each year
+         quint_pop = pop/5, # 1/5th of the weighted population by year
+         med_pop = pop/2) %>% # 1/2 of weighted pop by year
+  mutate(quint_bins = ifelse(cumsum <= quint_pop, 1,
+                       ifelse(cumsum > quint_pop & cumsum <= quint_pop*2, 2,
+                              ifelse(cumsum > quint_pop*2 & cumsum <= quint_pop*3, 3,
+                                     ifelse(cumsum > quint_pop*3 & cumsum <= quint_pop*4, 4, 5))))) %>% 
+  mutate(med_bin = ifelse(cumsum <= med_pop, yes=1, no=2)) %>% 
+  ungroup()
 
+quintile_metrics <- cps_filtered %>% 
+  group_by(year, quint_bins) %>% 
+  summarize(avg_weekpay = weighted.mean(realweekpay0, w=wgt),
+            epop = weighted.mean(emp, w=wgt),
+            avg_hours = weighted.mean(hoursu1i, w=wgt),
+            avg_wage = weighted.mean(realwage0, w=wgt),
+            n = n(),
+            wgt_n = sum(orgwgt/12)) %>% 
+  pivot_wider(id_cols = quint_bins, names_from = year, values_from = c(avg_weekpay, epop, avg_hours, avg_wage, n, wgt_n))
+
+
+median_metrics <- cps_filtered %>% 
+  group_by(year, med_bin) %>% 
+  summarize(avg_weekpay = weighted.mean(realweekpay0, w=wgt),
+            epop = weighted.mean(emp, w=wgt),
+            avg_hours = weighted.mean(hoursu1i, w=wgt),
+            avg_wage = weighted.mean(realwage0, w=wgt),
+            n = n(),
+            wgt_n = sum(orgwgt/12)) %>% 
+  pivot_wider(id_cols = med_bin, names_from = year, values_from = c(avg_weekpay, epop, avg_hours, avg_wage, n, wgt_n))
 
 ```
+
+```{r Workbook export}
+
+rand_order <- createWorkbook()
+
+pct = createStyle(numFmt = '0.0%')
+acct = createStyle(numFmt = '#,#0.0')
+currency = createStyle(numFmt = '$#,#0.00') 
+hs2 <- createStyle(fgFill = "#bfbfbf", halign = "CENTER", textDecoration = "Bold",
+                   border = "Bottom", fontColour = "black")
+
+addWorksheet(rand_order, sheetName = "Quintile metrics")
+addWorksheet(rand_order, sheetName = "Median metrics")
+
+writeData(rand_order, quintile_metrics, headerStyle = hs2, sheet = "Quintile metrics", startCol = 1, startRow = 1, colNames = TRUE)
+writeData(rand_order, median_metrics, headerStyle = hs2, sheet = "Median metrics", startCol = 1, startRow = 1, colNames = TRUE)
+
+#Currency format
+addStyle(rand_order, "Quintile metrics", style=currency, cols=c(2:27, 80:105), rows=2:(nrow(quintile_metrics)+1), gridExpand=TRUE)
+addStyle(rand_order, "Median metrics", style=currency, cols=c(2:27, 80:105), rows=2:(nrow(median_metrics)+1), gridExpand=TRUE)
+
+#Percent format
+addStyle(rand_order, "Quintile metrics", style=pct, cols=c(28:53), rows=2:(nrow(quintile_metrics)+1), gridExpand=TRUE)
+addStyle(rand_order, "Median metrics", style=pct, cols=c(28:53), rows=2:(nrow(median_metrics)+1), gridExpand=TRUE)
+
+#accounting format
+addStyle(rand_order, "Quintile metrics", style=acct, cols=c(54:79,106:157), rows=2:(nrow(quintile_metrics)+1), gridExpand=TRUE)
+addStyle(rand_order, "Median metrics", style=acct, cols=c(54:79,106:157), rows=2:(nrow(median_metrics)+1), gridExpand=TRUE)
+
+saveWorkbook(rand_order, here("data/Metrics.xlsx"), overwrite = TRUE)
+```
+
 
 ```{r ptiles merged to CPS}
 
@@ -314,7 +374,7 @@ hours25_54 <- cpsorg %>%
 ```
 
 
-```{r}
+```{r epop workbook}
 
 epophours <- createWorkbook()
 
