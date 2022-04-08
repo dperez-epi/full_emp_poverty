@@ -23,55 +23,50 @@ library(statar)
 cpi <- read_csv(here("input/cpi_annual.csv")) 
 cpi_base <- cpi$cpiurs[cpi$year == 2019] 
 
-cpsorg <-load_org(1994:2019, year, month, orgwgt, age, emp, lfstat, selfemp, selfinc, hourslw1, hoursu1i, hoursuorg, hoursut, hoursvary, wage, weekpay) %>%
+cpsorg <-load_org(1994:2019, year, month, orgwgt, age, emp, lfstat, selfemp, selfinc, hourslw1, hoursu1i, hoursuorg, hoursut, hoursvary, wage, weekpay, mind16, mocc10, cow1, dlfstat, emphrs) %>%
   filter(age>=16, emp %in% c(0,1)) %>%
   mutate(wgt = orgwgt/12) %>% 
   #create new version of selfemp/selfinc to exclude self employer workers
   mutate(selfemp0 = ifelse(selfemp==1 & !is.na(selfemp), yes=1, no=0),
          selfinc0 = ifelse(selfinc==1 & !is.na(selfinc), yes=1, no=0),
-         hoursvary0 = ifelse(hoursvary==1 & !is.na(hoursvary), yes=1, no=0)) %>% 
-  filter(selfemp0==0, selfemp0==0) %>% 
+         hoursvary0 = ifelse(hoursvary==1 & !is.na(hoursvary), yes=1, no=0)) %>%
+  filter(selfemp0==0, selfinc0==0) %>%
   #Merge CPI-U-RS data
   left_join(cpi, by='year') %>% 
   mutate(hours = hoursut) %>% 
   mutate(hours = replace(hours, emp==0, 0), #Assign unemp/NILF workers 0 hours
          realwage = wage*(cpi_base/cpiurs), # inflation adjust wages to 2019$
+         #Constructed 
+         realweekpay2 = hours * realwage,
          realweekpay = weekpay *(cpi_base/cpiurs),
          #create indicators for positive hours, weekly pay, and wages
          pwages = ifelse(realwage>0 & !is.na(realwage) , yes=1, no=0), 
+         pweekpay2 = ifelse(realweekpay2>0 & !is.na(realweekpay2) , yes=1, no=0),
          pweekpay = ifelse(realweekpay>0 & !is.na(realweekpay) , yes=1, no=0), 
          phours1 = ifelse(hours>0 & !is.na(hours), yes=1, no=0)) %>%
   set_value_labels(pwages = c('Positive wages' = 1, 'Zero wages' = 0),
+                   pweekpay2 = c('Positive weekpay' = 1, 'Zero weekpay' = 0),
                    pweekpay = c('Positive weekpay' = 1, 'Zero weekpay' = 0),
-                   phours1 = c('Positive hours, primar' = 1, 'Zero hours' =0))
+                   phours1 = c('Positive hours, primary job' = 1, 'Zero hours' =0))
 ```
 
-```{r avg hours wages and pay for employed}
-
-emp_cuts_alljobs <- cpsorg %>% 
-  filter(emp==1, pweekpay==1) %>% 
-  group_by(year) %>% 
-  summarize(avg_realwage = weighted.mean(realwage, w=wgt, na.rm=TRUE),
-            avg_hours_total = weighted.mean(hoursut, w=wgt, na.rm=TRUE),
-            avg_realweekpay = weighted.mean(realweekpay, w=wgt)) %>%
-  mutate(diff = avg_realwage *avg_hours_total) %>% 
-  write.xlsx(here('data/emp_cuts_hourstotal.xlsx'))
-  
+```{r Avg hours wages and pay for employed}
 
 emp_cuts <- cpsorg %>% 
-  #all employed workers with positive weekly pay
+#Calc average wages, hours, and weekly pay for all workers with positive weekly pay indicator
   filter(emp==1, pweekpay==1) %>% 
   group_by(year) %>% 
   summarize(avg_realwage = weighted.mean(realwage, w=wgt, na.rm=TRUE),
-            avg_hours_tot = weighted.mean(hours, w=wgt, na.rm=TRUE),
-            avg_realweekpay = weighted.mean(realweekpay, w=wgt)) %>%
-  mutate(avg_wageXhours = avg_realwage * avg_hours_tot,
-         diff = avg_realweekpay - avg_wageXhours)
+            avg_hours = weighted.mean(hours, w=wgt, na.rm=TRUE),
+            avg_realweekpay = weighted.mean(realweekpay2, w=wgt, na.rm=TRUE)) %>%
+  mutate(wageXhours = avg_realwage * avg_hours,
+         diff = avg_realweekpay - wageXhours)
   write.xlsx(here('data/emp_cuts.xlsx'))
 
+#Crosstab of employed worker hours, wages, and weekly pay indicators
 test<- cpsorg %>% 
   filter(emp==1) %>% 
-  mutate(across(phours1|pwages|pweekpay, ~to_factor(.x))) %>% 
+  mutate(across(phours1|pwages|pweekpay|pweekpay2, ~to_factor(.x))) %>% 
   count(phours1,pwages,pweekpay)
 
 
