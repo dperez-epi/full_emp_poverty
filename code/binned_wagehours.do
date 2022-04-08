@@ -2,7 +2,7 @@
 	Author:		Daniel Perez
 	Title: 		macropoverty.do
 	Date: 		02/10/2022
-	Created by: 	Daniel Per/z
+	Created by: 	Daniel Perez
 	Purpose:	Use CPS to estimate hours and wages by income quintiles
 			
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
@@ -101,7 +101,7 @@ drop if selfinc==1
 tempfile allthedata
 save `allthedata'
 
-* Generate wage medians for all workers by union affiliation
+* Generate wage medians for all workers by year
 use `allthedata', clear
 binipolate noisey_weekpay_r0 [pw=wgt], binsize(1) by(year) collapsefun(gcollapse) p(20 40 50 60 80)
 reshape wide noisey_weekpay_r0_binned, i(year) j(percentile)
