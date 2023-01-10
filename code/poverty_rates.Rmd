@@ -21,29 +21,29 @@ library(ggplot2)
 Our benchmark 
 https://www.cbpp.org/research/poverty-and-inequality/research-note-number-of-people-in-families-with-below-poverty#_ftnref2
 
-[1] These figures reflect three refinements to a previous version of this analysis released on June 16, 2020. 
-
-First, when calculating weekly earnings, we assigned zero earnings to workers who reported that they were absent from work all week without pay, even if they reported a “usual weekly earnings” amount. 
-Second, for individuals classified as hourly workers, we calculated their weekly earnings as their hourly wage times their actual hours worked during the reference week. 
-Third, we excluded families where all individuals who are employed (or who were employed recently) are self-employed because Census does not report weekly self-employment earnings.
 
 ```{r Load poverty thresholds and CPI}
 
+#Below I load both annual and monthly CPI, as I want to adjust the 2020 annual
+#poverty thresholds from $2020 CPI-U into monthly poverty thresholds.
+
+#annual CPI
 annual_cpi <- read_csv(here('input/cpi_annual.csv'), col_names=TRUE)
-
-cpi <- read_csv(here('input/cpi_monthly.csv'), col_names=TRUE) %>% 
-  select(year, month, cpi_u, cpiurs)
-
 cpi_2020 <- annual_cpi$cpi_u[annual_cpi$year=='2020']
 
+#monthly CPI
+cpi <- read_csv(here('input/cpi_monthly.csv'), col_names=TRUE) %>% 
+  select(year, month, cpi_u, cpiurs)
 cpi_base <- cpi$cpiurs[cpi$year == '2020' & cpi$month=='6'] # Adjust all to June 2020 $
 
-
+#Load 2020 poverty thresholds. Source:
+#https://www.census.gov/data/tables/time-series/demo/income-poverty/historical-poverty-thresholds.html
 pov_thresh <- read_csv(here('input/povthresh20.csv'), col_names=TRUE) %>%
   filter(over65==0) %>% 
   select(year, month, famsize, child_under18, pov_thresh_2020)
 
-#create a historic threshold from 1994 to present
+#create a historic threshold from 1994 to present by adjusting 2020 thresholds
+#with CPI-U
 historic_thresh <- cpi %>%
   filter(year %in% c(1994:2020)) %>% 
   left_join(pov_thresh, by='month') %>%
@@ -56,7 +56,8 @@ historic_thresh <- cpi %>%
 
 ```{r Load data}
 
-cps <- data.table(load_basic(1994:2020, orgwgt, basicwgt, finalwgt, year, month, minsamp, selfemp, selfinc, personid, hhid, hhtype, famtype, famid, famrel, ownchild, agechild, paidhre, wage, wageotc, weekpay, hourslwt, hourslw1, hoursu1i, emphrs, emp, unemp, cow1, lfstat, age, wbhao, wbho_only, faminc)) %>% 
+#load CPS Basic data, but then restrict to minsamp 4 & 8 (ORG months only)
+cps <- load_basic(1994:2020, orgwgt, basicwgt, finalwgt, year, month, minsamp, selfemp, selfinc, personid, hhid, hhtype, famtype, famid, famrel, ownchild, agechild, paidhre, wage, wageotc, weekpay, hourslwt, hourslw1, hoursu1i, emphrs, emp, unemp, cow1, lfstat, age, wbhao, wbho_only, faminc) %>% 
   #keep only those interviewed in the ORG
   filter(minsamp %in% c(4,8), age<65) %>%
   mutate(selfemp0 = ifelse(selfemp==1 & !is.na(selfemp), yes=1, no=0),
@@ -105,7 +106,7 @@ wgt_ratios <- cps %>%
 
 ```
 
-
+This chunk splits intensive operations into three dataframes: thedata, fam_incomes, and fam_poverty.
 
 ```{r Clean CPS Basic}
 
@@ -148,7 +149,7 @@ fam_poverty <- fam_incomes %>%
 
 ```
 
-```{r Time series of monthly poverty}
+```{r Time series of monthly poverty data}
 
 natl_poverty <- fam_poverty %>% 
   group_by(year, month) %>% 
@@ -194,6 +195,15 @@ hist_poverty + hist_urate
 #save photo to output
 ggsave(here(paste0('output/stateplots/',plotstates[i],'.png')), plot = last_plot(), dpi=300, width = 9, height = 5)
 
+
+```
+```{r Benchmark CBPP data}
+
+#This script will benchmark (almost) our market based income measure to
+#CBPP's report:
+# https://www.cbpp.org/research/poverty-and-inequality/research-note-number-of-people-in-families-with-below-poverty#_ftnref2
+
+# source("code/cbpp_benchmark.R", echo = TRUE)
 
 ```
 
