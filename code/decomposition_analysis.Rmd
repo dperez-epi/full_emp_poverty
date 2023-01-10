@@ -39,40 +39,39 @@ cps <- load_org(1994:2019, year, month, orgwgt, age, emp, lfstat, selfemp, selfi
   left_join(cpi, by='year') %>% 
   mutate(hours = hoursu1i) %>% 
   mutate(realwage = wage*(cpi_base/cpiurs),
-         #Constructed weekly pay variable
-         c.realweekpay.pre = ifelse(hours>0, yes=hours * realwage, NA),
-         c.realweekpay.post = hours * realwage) %>% 
+         #Construct our weekly pay variable, realweekpay_c
+         # Note: if hours are positive, then multiply hours x realwage. Otherwise assign realweekpay_c == NA
+         realweekpay_c = ifelse(hours>0, yes=hours * realwage, NA)) %>% 
          #create indicators for whether an individual has positive work hours, weekly pay, and/or wages
   mutate(pwages = ifelse(realwage>0 & !is.na(realwage) , yes=1, no=0), 
-         pweekpay.c = ifelse(c.realweekpay.pre>0 & !is.na(c.realweekpay.pre) , yes=1, no=0),
+         pweekpay.c = ifelse(realweekpay_c>0 & !is.na(realweekpay_c) , yes=1, no=0),
          phours1 = ifelse(hours>0 & !is.na(hours), yes=1, no=0)) %>%
   #Set labels for indicators using labelled package
   set_value_labels(pwages = c('Positive wages' = 1, 'Zero wages' = 0),
                    pweekpay.c = c('Positive constr. weekpay' = 1, 'Zero constr. weekpay' = 0),
                    phours1 = c('Positive hours, primary job' = 1, 'Zero hours' =0))
 
-
 ```
+
 
 As a note, we want to remove self employed / self incorporated folks because they do not report wages / hours despite being employed. We do want to keep non-self emp/inc folks though, including those who are just NILF or selfemp/selfinc==NA, because we want to turn them into NILF workers with zero wages/hours
 
-
 ```{r Quintile and Median analysis}
 
+#Set seed for reproducible results
 set.seed(1017)
-##assign each observation a random # between 0 and 1
-# mutate(index = runif(nrow(.), min = 0, max=1)) %>%  
-
 
 filteredcps <- cps %>% 
   filter(age<65, selfemp0==0, selfinc0==0) %>% 
+  #Keep workers who are either employed with positive hours/wages, or unemployed with zero hours/wages. No other combinations.
   filter((emp==1 & pwages==1 & phours1==1) | (emp==0 & pwages==0 & phours1==0)) %>% 
+  #
   mutate(hours0 = replace(hours, emp==0, 0),
          hours_na = replace(hours, emp==0, NA)) %>%
-  #sample_n(100, replace=FALSE) %>% 
+  #assign each observation a uniformly distributed random # between 0 and 1
   mutate(index = runif(nrow(.), min = 0, max=1)) %>%  
   #sort by year, real weekly pay
-  arrange(year, !is.na(c.realweekpay.pre), c.realweekpay.pre, index) %>%
+  arrange(year, !is.na(realweekpay_c), realweekpay_c, index) %>%
   group_by(year) %>% 
   #column with cumulative sum of org weight
   mutate(cumsum = cumsum(orgwgt/12), 
