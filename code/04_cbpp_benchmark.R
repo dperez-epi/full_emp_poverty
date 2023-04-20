@@ -11,14 +11,14 @@ popcount <- cps %>%
             n = n())
 
 #filtered bc I remove everyone who doesn't have a finalwgt and thus adj_wgt
-popcount_filtered <- fam_poverty %>%
+popcount_filtered <- cps_families %>%
   group_by(month) %>% 
   filter(age>=16 & age<65) %>% 
   summarize(wgt_n = sum(orgwgt, na.rm=TRUE),
             employed = sum(emp * orgwgt, na.rm=TRUE),
             n = n())
 
-povcount_all <- fam_poverty %>% 
+povcount_all <- cps_families %>% 
   filter(year==2020) %>% 
   group_by(month) %>% 
   summarize(wgt_n = sum(inpoverty * adj_wgt, na.rm=TRUE),
@@ -28,7 +28,7 @@ povcount_all <- fam_poverty %>%
          poverty_earnings='All',
          year=2020)
 
-monthlypov_all <- fam_poverty %>% 
+monthlypov_all <- cps_families %>% 
   filter(year==2020) %>% 
   group_by(month) %>% 
   summarize(inpov = sum(inpoverty * adj_wgt, na.rm=TRUE),
@@ -38,7 +38,7 @@ monthlypov_all <- fam_poverty %>%
   mutate(group='Poverty, all',
          poverty_earnings='All')
 
-povcount_under18 <- fam_poverty %>%
+povcount_under18 <- cps_families %>%
   filter(year==2020) %>% 
   filter(age<18) %>% 
   group_by(month) %>% 
@@ -48,7 +48,7 @@ povcount_under18 <- fam_poverty %>%
   mutate(group='Poverty, all',
          poverty_earnings='All')
 
-povcount_wbhao <- fam_poverty %>% 
+povcount_wbhao <- cps_families %>% 
   filter(year==2020) %>% 
   group_by(year, month, wbhao) %>% 
   summarize(wgt_n = sum(inpoverty * adj_wgt, na.rm=TRUE),
@@ -58,7 +58,7 @@ povcount_wbhao <- fam_poverty %>%
   mutate(group='Poverty, wbhao',
          poverty_earnings=wbhao)
 
-povcount_wbho_only <- fam_poverty %>%
+povcount_wbho_only <- cps_families %>%
   filter(year==2020) %>% 
   group_by(year, month, wbho_only) %>%
   summarize(wgt_n = sum(inpoverty * adj_wgt, na.rm=TRUE),
@@ -68,7 +68,7 @@ povcount_wbho_only <- fam_poverty %>%
   mutate(group='Poverty, wbho_only',
          poverty_earnings=wbho_only)
 
-povcount_age <- fam_poverty %>% 
+povcount_age <- cps_families %>% 
   filter(year==2020) %>% 
   group_by(year, month, under18) %>% 
   summarize(wgt_n= sum(inpoverty * adj_wgt, na.rm=TRUE),
@@ -79,7 +79,7 @@ povcount_age <- fam_poverty %>%
   mutate(group='Poverty, age') %>% 
   rename(poverty_earnings = under18)
 
-noincome_all <- fam_poverty %>% 
+noincome_all <- cps_families %>% 
   filter(year==2020) %>% 
   group_by(year, month) %>% 
   summarize(wgt_n = sum(noincome * adj_wgt, na.rm=TRUE),
@@ -88,7 +88,7 @@ noincome_all <- fam_poverty %>%
   mutate(group='No income, all',
          zero_earnings = 'All')
 
-noincome_wbhao <- fam_poverty %>%
+noincome_wbhao <- cps_families %>%
   filter(year==2020) %>% 
   mutate(wbhao=as_factor(wbhao)) %>% 
   group_by(year, month, wbhao) %>% 
@@ -98,7 +98,7 @@ noincome_wbhao <- fam_poverty %>%
   mutate(group='No income, wbhao') %>% 
   rename(zero_earnings = wbhao)
 
-noincome_age <- fam_poverty %>% 
+noincome_age <- cps_families %>% 
   filter(year==2020) %>% 
   group_by(year, month, under18) %>% 
   summarize(wgt_n = sum(noincome * adj_wgt, na.rm=TRUE),
@@ -148,13 +148,13 @@ table2 <- bind_rows(fams_in_poverty_share, fams_no_income_share) %>%
 
 
 #benchmark of employed persons
-adults <- fam_poverty %>% 
+adults <- cps_families %>% 
   filter(year==2020) %>% 
   summarize(adults_16plus = sum(orgwgt/12, na.rm=TRUE),
             adults_pwages = sum(orgwgt[weekpay>0]/12, na.rm=TRUE),
             n = n())
 
-payeligible <- fam_poverty %>% 
+payeligible <- cps_families %>% 
   filter(year==2020) %>% 
   group_by(month) %>% 
   summarize(adults_16plus = sum(orgwgt, na.rm=TRUE),
@@ -163,7 +163,7 @@ payeligible <- fam_poverty %>%
             n = n())
 
 #count of population by age
-agecount <- fam_poverty %>% 
+agecount <- cps_families %>% 
   filter(year==2020) %>% 
   group_by(age) %>% 
   summarize(under16 = sum(adj_wgt/12, na.rm=TRUE),
@@ -193,4 +193,32 @@ weekpay <- thedata %>%
             avg_weekpay = weighted.mean(realweekpay, w=orgwgt, na.rm=TRUE),
             n=n())
 
-```
+
+
+
+# Workbook export
+
+pov <- createWorkbook()
+
+addWorksheet(pov, sheetName = "Table 1")
+addWorksheet(pov, sheetName = "Table 2")
+
+pct = createStyle(numFmt = '0.0%')
+acct = createStyle(numFmt = '#.0' )
+hs1 <- createStyle(fgFill = "#4F81BD", halign = "CENTER", textDecoration = "Bold",
+                   border = "Bottom", fontColour = "white")
+
+writeData(pov, headerStyle = hs1, table1, sheet = "Table 1",
+          startCol = 1, startRow = 1, colNames = TRUE)
+writeData(pov, table2, headerStyle = hs1, sheet = "Table 2",
+          startCol = 1, startRow = 1, colNames = TRUE)
+
+#add percent format
+addStyle(pov, "Table 1", style=pct, cols=6, rows=2:(nrow(table1)+1), gridExpand=TRUE)
+addStyle(pov, "Table 2", style=pct, cols=c(3:6), rows=2:(nrow(table2)+1), gridExpand=TRUE)
+
+#add accounting format
+addStyle(pov, "Table 1", style=acct, cols=c(3:5), rows=2:(nrow(table1)+1), gridExpand=TRUE)
+
+
+saveWorkbook(pov, here("output/cbpp_benchmark.xlsx"), overwrite = TRUE)

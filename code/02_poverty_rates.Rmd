@@ -5,22 +5,6 @@ date: "10/11/2021"
 output: html_document
 ---
 
-```{r libraries, include=FALSE}
-library(tidyverse)
-library(data.table)
-library(epiextractr)
-library(epidatatools)
-library(labelled)
-library(here)
-library(blsAPI)
-library(openxlsx)
-library(zoo)
-library(ggplot2)
-```
-
-Our benchmark 
-https://www.cbpp.org/research/poverty-and-inequality/research-note-number-of-people-in-families-with-below-poverty#_ftnref2
-
 
 ```{r Load poverty thresholds and CPI}
 
@@ -29,48 +13,57 @@ https://www.cbpp.org/research/poverty-and-inequality/research-note-number-of-peo
 
 #annual CPI
 annual_cpi <- read_csv(here('input/cpi_annual.csv'), col_names=TRUE)
-cpi_2020 <- annual_cpi$cpi_u[annual_cpi$year=='2020']
+cpi_2022 <- annual_cpi$cpi_u[annual_cpi$year=='2022']
 
 #monthly CPI
 cpi <- read_csv(here('input/cpi_monthly.csv'), col_names=TRUE) %>% 
   select(year, month, cpi_u, cpiurs)
-cpi_base <- cpi$cpiurs[cpi$year == '2020' & cpi$month=='6'] # Adjust all to June 2020 $
+cpi_base <- cpi$cpiurs[cpi$year == '2022' & cpi$month=='12'] # Adjust all to December 2022 $
 
 #Load 2020 poverty thresholds. Source:
 #https://www.census.gov/data/tables/time-series/demo/income-poverty/historical-poverty-thresholds.html
-pov_thresh <- read_csv(here('input/povthresh20.csv'), col_names=TRUE) %>%
+pov_thresh <- read_csv(here('input/povthresh22.csv'), col_names=TRUE) %>%
   filter(over65==0) %>% 
-  select(year, month, famsize, child_under18, pov_thresh_2020)
+  select(year, month, famsize, child_under18, pov_thresh_2022)
 
 #create a historic threshold from 1994 to present by adjusting 2020 thresholds
 #with CPI-U
 historic_thresh <- cpi %>%
-  filter(year %in% c(1994:2020)) %>% 
+  filter(year %in% c(1994:2022)) %>% 
   left_join(pov_thresh, by='month') %>%
-  mutate(rpov_thresh = pov_thresh_2020*(cpi_u/cpi_2020)) %>% 
   rename(year = year.x) %>% 
   select(-year.y)
 
 ```
 
 
-```{r Load data}
+```{r Load CPS data}
 
 #load CPS Basic data, but then restrict to minsamp 4 & 8 (ORG months only)
-cps <- load_basic(1994:2020, orgwgt, basicwgt, finalwgt, year, month, minsamp, selfemp, selfinc, personid, hhid, hhtype, famtype, famid, famrel, ownchild, agechild, paidhre, wage, wageotc, weekpay, hourslwt, hourslw1, hoursu1i, emphrs, emp, unemp, cow1, lfstat, age, wbhao, wbho_only, faminc) %>% 
+cps <- load_basic(1994:2022, orgwgt, basicwgt, finalwgt, year, month, minsamp, selfemp,
+                  selfinc, personid, hhid, hhtype, famtype, famid, famrel, ownchild,
+                  agechild, paidhre, wage, wageotc, weekpay, faminc, hourslwt, hourslw1, hoursu1i,
+                  emphrs, emp, unemp, cow1, lfstat, age, wbhao, wbho_only, faminc) %>% 
+  
   #keep only those interviewed in the ORG
-  filter(minsamp %in% c(4,8), age<65) %>%
+  filter(minsamp %in% c(4,8)) %>%
+  
+  #Create variables to easily exclude self employed/incorporated workers
   mutate(selfemp0 = ifelse(selfemp==1 & !is.na(selfemp), yes=1, no=0),
          selfinc0 = ifelse(selfinc==1 & !is.na(selfinc), yes=1, no=0),
          selfany = ifelse(selfinc0==1 | selfemp0==1, yes=1, no=0),
          emp0 = ifelse(emp==1 & !is.na(emp), yes=1, no=0)) %>%
-  #Create indicator for workers absent from work
-  mutate(hourslw_i = ifelse(hourslwt<=0 | is.na(hourslwt), yes=0, no=1)) %>% 
-  #Merge CPI data
-  left_join(cpi, by=c('year', 'month')) %>% 
+  
   #create indicator of reason not at work/hours last week
-  mutate(realweekpay = weekpay*(cpiurs/cpi_base),
-         realwageotc = wageotc*(cpiurs/cpi_base),
+  mutate(hourslw_i = ifelse(hourslwt<=0 | is.na(hourslwt), yes=0, no=1)) %>% 
+  
+  #Merge CPI data and inflation adjust wage data
+  left_join(cpi, by=c('year', 'month')) %>% 
+  
+  #Inflation adjust wage data, and create wage variable for hourly and salaried workers.
+  mutate(realweekpay = weekpay*(cpi_base/cpiurs),
+         realwageotc = wageotc*(cpi_base/cpiurs),
+         
          realwage.c = ifelse(hoursu1i>0, yes=hoursu1i * realwageotc, no = NA),
          
          #If worker is paid hourly, calculate weekly pay as realwageotc*hoursu1i. 
@@ -93,9 +86,16 @@ cps <- load_basic(1994:2020, orgwgt, basicwgt, finalwgt, year, month, minsamp, s
   group_by(year, month, hhid, famid) %>% 
   #create group id for each family in sample
   mutate(group_id = cur_group_id()) %>% 
-  ungroup()
+  ungroup() %>% 
+  mutate(faminc = to_factor(faminc))
 
-#Create weights for children under 16
+```
+
+This chunk splits intensive operations into separate dataframes: cps and cps_families
+
+```{r Clean CPS Basic}
+
+#Create weights for children under 16. 
 wgt_ratios <- cps %>% 
   select(group_id, famrel, orgwgt, finalwgt) %>% 
   filter(famrel==1) %>% 
@@ -104,21 +104,19 @@ wgt_ratios <- cps %>%
   mutate(orgfinal_ratio = ifelse(famrel==1, yes=orgwgt/finalwgt, no=NA)) %>% 
   select(group_id, orgfinal_ratio)
 
-```
-
-This chunk splits intensive operations into three dataframes: thedata, fam_incomes, and fam_poverty.
-
-```{r Clean CPS Basic}
-
-thedata <- cps %>% 
+cps <- cps %>%
   #merge org-to-final weight ratios to cps dataset by group_id
   left_join(wgt_ratios, by='group_id') %>% 
   relocate(famrel, age, finalwgt, orgwgt, .after=orgfinal_ratio) %>% 
   #Create a new weight for those under 16yo according to Saenz, Sherman 2020.
   mutate(adj_wgt = ifelse(age<16, yes=orgfinal_ratio*finalwgt, no=orgwgt))
 
+
+#This groups people into families
+cps_families <- cps %>% 
+  #Only keep non elderly families
+  filter(age<65) %>% 
 #Create new data frame to measure total family income, excluding self-employed, self-incorporated families
-fam_incomes <- thedata %>% 
   group_by(group_id) %>%
     #This section removes families where all working adults are self-employed
   mutate(selfemp_pop = sum(selfany==1), #count self employed in each family
@@ -131,36 +129,37 @@ fam_incomes <- thedata %>%
   #count family's real annual pay
   mutate(rtotweekpay = sum(realweekpay.c, na.rm=TRUE),
          rtotyearpay = sum(realweekpay.c*52, na.rm=TRUE)) %>% 
-  ungroup()
+  ungroup() %>% 
 
-fam_poverty <- fam_incomes %>% 
   #Merge poverty thresholds from census
   left_join(historic_thresh) %>% 
-  mutate(rweekpov_thresh = (rpov_thresh/52)) %>%
+  mutate(weekly_pov_thresh_22 = (pov_thresh_2022/52)) %>%
   #create unemp variable
   mutate(unemp = ifelse(lfstat==2, yes=1, no=0)) %>%
   set_value_labels(unemp = c('Unemployed'=1, 'Employed/NILF'=0)) %>% 
-  mutate(inpoverty = ifelse((rtotweekpay<rweekpov_thresh), yes=1, no=0), #Create an indicator for folks in poverty
-         povlevel = round((rtotyearpay/rpov_thresh)*100)) %>% #create poverty measure
+  mutate(inpoverty = ifelse((rtotweekpay<weekly_pov_thresh_22), yes=1, no=0), #Create an indicator for folks in poverty
+         povlevel = round((rtotyearpay/pov_thresh_2022)*100)) %>% #create poverty measure
   mutate(noincome = ifelse(rtotweekpay==0, yes=1, no=0)) %>% #count folks w/no income
   set_value_labels(noincome = c('No income'= 1, 'With income'= 0)) %>% 
   #remove 1152 observations in sample that have no ORG weight
-  filter(!is.na(adj_wgt))
+  filter(!is.na(adj_wgt)) %>% 
+  #write workbook so I can play with data later!
+  relocate(group_id, faminc, .after = rtotyearpay) %>% 
+  write_csv(here('input/poverty_rate_data.csv'))
 
 ```
 
 ```{r Time series of monthly poverty data}
 
-natl_poverty <- fam_poverty %>% 
+natl_poverty_monthly <- cps_families %>% 
   group_by(year, month) %>% 
   summarize(n = n(),
             in_poverty = sum(inpoverty * (adj_wgt/12), na.rm=TRUE),
             poverty = weighted.mean(inpoverty, w=adj_wgt, na.rm=TRUE),
-            urate = weighted.mean(unemp, w=adj_wgt, na.rm=TRUE)) %>%
+            urate16_64 = weighted.mean(unemp, w=adj_wgt, na.rm=TRUE)) %>%
   mutate(group='Poverty, all',
          poverty_earnings='All',
          date= as.Date(paste(year, month, 1, sep = "-"), "%Y-%m-%d"))
-  
     
 hist_poverty <- ggplot(aes(x=date, y=poverty), data=natl_poverty)+
   theme_light()+
@@ -175,7 +174,7 @@ hist_urate <-  ggplot(aes(x=date, y=urate), data=natl_poverty)+
   geom_line(size=1)
 
 
-annual_natl_poverty <- fam_poverty %>% 
+annual_natl_poverty <- cps_families %>% 
   group_by(year) %>% 
   summarize(n = n(),
             in_poverty = sum(inpoverty * (adj_wgt/12), na.rm=TRUE),
@@ -197,45 +196,7 @@ ggsave(here(paste0('output/stateplots/',plotstates[i],'.png')), plot = last_plot
 
 
 ```
-```{r Benchmark CBPP data}
 
-#This script will benchmark (almost) our market based income measure to
-#CBPP's report:
-# https://www.cbpp.org/research/poverty-and-inequality/research-note-number-of-people-in-families-with-below-poverty#_ftnref2
-
-# source("code/cbpp_benchmark.R", echo = TRUE)
-
-```
-
-
-
-
-```{r Workbook export}
-pov <- createWorkbook()
-
-addWorksheet(pov, sheetName = "Table 1")
-addWorksheet(pov, sheetName = "Table 2")
-
-pct = createStyle(numFmt = '0.0%')
-acct = createStyle(numFmt = '#.0' )
-hs1 <- createStyle(fgFill = "#4F81BD", halign = "CENTER", textDecoration = "Bold",
-                   border = "Bottom", fontColour = "white")
-
-writeData(pov, headerStyle = hs1, table1, sheet = "Table 1",
-          startCol = 1, startRow = 1, colNames = TRUE)
-writeData(pov, table2, headerStyle = hs1, sheet = "Table 2",
-          startCol = 1, startRow = 1, colNames = TRUE)
-
-#add percent format
-addStyle(pov, "Table 1", style=pct, cols=6, rows=2:(nrow(table1)+1), gridExpand=TRUE)
-addStyle(pov, "Table 2", style=pct, cols=c(3:6), rows=2:(nrow(table2)+1), gridExpand=TRUE)
-
-#add accounting format
-addStyle(pov, "Table 1", style=acct, cols=c(3:5), rows=2:(nrow(table1)+1), gridExpand=TRUE)
-
-
-saveWorkbook(pov, here("output/poverty_workbook.xlsx"), overwrite = TRUE)
-```
 
 
 
