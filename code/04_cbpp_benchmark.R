@@ -48,15 +48,15 @@ povcount_under18 <- cps_families %>%
   mutate(group='Poverty, all',
          poverty_earnings='All')
 
-povcount_wbhao <- cps_families %>% 
+povcount_wbho_only <- cps_families %>% 
   filter(year==2020) %>% 
-  group_by(year, month, wbhao) %>% 
+  group_by(year, month, wbho_only) %>% 
   summarize(wgt_n = sum(inpoverty * adj_wgt, na.rm=TRUE),
             share = weighted.mean(inpoverty, w=adj_wgt, na.rm=TRUE),
             n = n()) %>% 
-  mutate(wbhao = to_factor(wbhao)) %>% 
-  mutate(group='Poverty, wbhao',
-         poverty_earnings=wbhao)
+  mutate(wbho_only = to_factor(wbho_only)) %>% 
+  mutate(group='Poverty, wbho_only',
+         poverty_earnings=wbho_only)
 
 povcount_wbho_only <- cps_families %>%
   filter(year==2020) %>% 
@@ -88,15 +88,15 @@ noincome_all <- cps_families %>%
   mutate(group='No income, all',
          zero_earnings = 'All')
 
-noincome_wbhao <- cps_families %>%
+noincome_wbho_only <- cps_families %>%
   filter(year==2020) %>% 
-  mutate(wbhao=as_factor(wbhao)) %>% 
-  group_by(year, month, wbhao) %>% 
+  mutate(wbho_only=as_factor(wbho_only)) %>% 
+  group_by(year, month, wbho_only) %>% 
   summarize(wgt_n = sum(noincome * adj_wgt, na.rm=TRUE),
             share = weighted.mean(noincome, w=adj_wgt, na.rm=TRUE),
             n = n()) %>% 
-  mutate(group='No income, wbhao') %>% 
-  rename(zero_earnings = wbhao)
+  mutate(group='No income, wbho_only') %>% 
+  rename(zero_earnings = wbho_only)
 
 noincome_age <- cps_families %>% 
   filter(year==2020) %>% 
@@ -111,26 +111,26 @@ noincome_age <- cps_families %>%
 
 
 #bind poverty tables
-fams_in_poverty_count <- bind_rows(povcount_all, povcount_age, povcount_wbhao) %>% 
+fams_in_poverty_count <- bind_rows(povcount_all, povcount_age, povcount_wbho_only) %>% 
   filter(month %in% c(2,4,6)) %>% 
   mutate(month = to_factor(month)) %>%
   pivot_wider(id_cols = poverty_earnings, names_from = c(month,year), values_from = wgt_n) %>% 
   mutate(feb_to_jun_pct = (Jun_2020/Feb_2020)-1)
 
-fams_in_poverty_share <- bind_rows(povcount_all,povcount_age, povcount_wbhao) %>% 
+fams_in_poverty_share <- bind_rows(povcount_all,povcount_age, povcount_wbho_only) %>% 
   filter(month %in% c(2,4,6)) %>% 
   mutate(month = to_factor(month)) %>%
   pivot_wider(id_cols = poverty_earnings, names_from = c(month, year), values_from = share) %>% 
   mutate(feb_to_jun_ppt = (Jun_2020-Feb_2020))
 
 #bind zero income tables
-fams_no_income_count <- bind_rows(noincome_all, noincome_age, noincome_wbhao) %>% 
+fams_no_income_count <- bind_rows(noincome_all, noincome_age, noincome_wbho_only) %>% 
   filter(month %in% c(2,4,6)) %>% 
   mutate(month = to_factor(month)) %>%
   pivot_wider(id_cols = zero_earnings, names_from = c(month,year), values_from = wgt_n) %>% 
   mutate(feb_to_jun_pct = (Jun_2020/Feb_2020)-1)
 
-fams_no_income_share <- bind_rows(noincome_all, noincome_age, noincome_wbhao) %>% 
+fams_no_income_share <- bind_rows(noincome_all, noincome_age, noincome_wbho_only) %>% 
   filter(month %in% c(2,4,6)) %>% 
   mutate(month = to_factor(month)) %>%
   pivot_wider(id_cols = zero_earnings, names_from = c(month,year), values_from = share) %>% 
@@ -172,7 +172,7 @@ agecount <- cps_families %>%
 
 
 ## median weekly pay benchmark to https://www.bls.gov/news.release/pdf/wkyeng.pdf
-benchmarkpay <- thedata %>% 
+benchmarkpay <- cps_families %>% 
   filter(age>=16, selfemp==0, selfinc==0, emp==1) %>% 
   mutate(date = as.Date(paste(year, month, 1, sep = "-"), "%Y-%m-%d")) %>% 
   #create quarterly date periods
@@ -185,7 +185,7 @@ benchmarkpay <- thedata %>%
             wgt_n=sum(orgwgt/3, na.rm=TRUE)/1000)
 
 # will break if age is not restricted to 16+
-weekpay <- thedata %>% 
+weekpay <- cps_families %>% 
   filter(age>=16 & age<65, selfinc0==0, selfemp0==0) %>% 
   group_by(month) %>% 
   summarize(avg_wages = weighted.mean(realwage, w=orgwgt, na.rm=TRUE),

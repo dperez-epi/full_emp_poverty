@@ -11,30 +11,65 @@ output: html_document
 #Below I load both annual and monthly CPI, as I want to adjust the 2020 annual
 #poverty thresholds from $2020 CPI-U into monthly poverty thresholds.
 
-#annual CPI
-annual_cpi <- read_csv(here('input/cpi_annual.csv'), col_names=TRUE)
-cpi_2022 <- annual_cpi$cpi_u[annual_cpi$year=='2022']
+
+annual_cpi <- cpi_u_rs_annual
+cpi_2022 <- annual_cpi$cpi_u_rs[annual_cpi$year=='2022']
 
 #monthly CPI
-cpi <- read_csv(here('input/cpi_monthly.csv'), col_names=TRUE) %>% 
-  select(year, month, cpi_u, cpiurs)
-cpi_base <- cpi$cpiurs[cpi$year == '2022' & cpi$month=='12'] # Adjust all to December 2022 $
+monthly_cpi <- cpi_u_rs_monthly_nsa
+cpi_dec2022 <- monthly_cpi$cpi_u_rs[monthly_cpi$year == '2022' & monthly_cpi$month=='12'] # Adjust all to December 2022 $
 
-#Load 2020 poverty thresholds. Source:
-#https://www.census.gov/data/tables/time-series/demo/income-poverty/historical-poverty-thresholds.html
-pov_thresh <- read_csv(here('input/povthresh22.csv'), col_names=TRUE) %>%
-  filter(over65==0) %>% 
-  select(year, month, famsize, child_under18, pov_thresh_2022)
-
-#create a historic threshold from 1994 to present by adjusting 2020 thresholds
-#with CPI-U
-historic_thresh <- cpi %>%
-  filter(year %in% c(1994:2022)) %>% 
-  left_join(pov_thresh, by='month') %>%
-  rename(year = year.x) %>% 
-  select(-year.y)
 
 ```
+
+```{r poverty thresholds, }
+
+# Load and clean 2022 poverty thresholds. Source:
+# https://www.census.gov/data/tables/time-series/demo/income-poverty/historical-poverty-thresholds.html 
+raw_threshold <- readxl::read_excel(here('input/thresh22.xlsx'), range = "A6:J22") %>% 
+  janitor::clean_names() %>% 
+  rename(famsize = x1) %>% 
+  #Clean names
+  mutate(famsize = str_replace_all(famsize,"[[:punct:]]",""),
+         famsize = str_replace(famsize, "Under 65 years", "One person <65"),
+         famsize = str_replace(famsize, "Householder under 65 years", "Two people <65")) %>% 
+  filter(!is.na(famsize), !is.na(none), !(famsize %in% c('65 years and over', 'Householder 65 years and over')))
+
+
+
+extended_threshold <- read_csv(here('input/povthresh22.csv'), col_names=TRUE) %>%
+  filter(year==2022, month==12) %>% 
+  filter(famsize>9) %>% 
+  select(famsize, child_under18, threshold2022=pov_thresh_2022)
+
+#create a historic threshold from 1994 to present by adjusting 2022 thresholds
+#Perhaps restructure this part of the code. 
+#Merge this on to CPS data by family and children. 
+#Merge threshold data to fams and CPI to cps by month
+
+
+clean_thresh <- raw_threshold %>% 
+  pivot_longer(2:ncol(raw_threshold), values_to="threshold2022", names_to = 'children') %>% 
+  filter(!is.na(threshold2022)) %>% 
+  mutate(famsize = factor(famsize, levels = c('One person <65', 'Two people <65', 'Three people', 'Four people', 'Five people', 'Six people', 
+                                              'Seven people', 'Eight people', 'Nine people or more')),
+         child_under18 = case_when(children == 'none' ~ 0,
+                                   children == 'one' ~ 1,
+                                   children == 'two' ~ 2, 
+                                   children == 'three' ~ 3,
+                                   children == 'four' ~ 4,
+                                   children == 'five' ~ 5,
+                                   children == 'six' ~ 6,
+                                   children == 'seven' ~ 7,
+                                   children == 'eight_or_more' ~ 8)) %>% 
+  rename(old_famsize = famsize) %>% 
+  mutate(famsize = as.numeric(old_famsize)) %>% 
+  select(famsize, child_under18, threshold2022)%>% 
+  #Merge an extended threshold categories to map onto large families (10+)
+  bind_rows(extended_threshold)
+
+```
+
 
 
 ```{r Load CPS data}
@@ -43,31 +78,26 @@ historic_thresh <- cpi %>%
 cps <- load_basic(1994:2022, orgwgt, basicwgt, finalwgt, year, month, minsamp, selfemp,
                   selfinc, personid, hhid, hhtype, famtype, famid, famrel, ownchild,
                   agechild, paidhre, wage, wageotc, weekpay, faminc, hourslwt, hourslw1, hoursu1i,
-                  emphrs, emp, unemp, cow1, lfstat, age, wbhao, wbho_only, faminc) %>% 
+                  emphrs, unemp, lfstat, age, wbhao, wbho_only, faminc) %>% 
   
   #keep only those interviewed in the ORG
   filter(minsamp %in% c(4,8)) %>%
-  
-  #Create variables to easily exclude self employed/incorporated workers
-  mutate(selfemp0 = ifelse(selfemp==1 & !is.na(selfemp), yes=1, no=0),
-         selfinc0 = ifelse(selfinc==1 & !is.na(selfinc), yes=1, no=0),
-         selfany = ifelse(selfinc0==1 | selfemp0==1, yes=1, no=0),
-         emp0 = ifelse(emp==1 & !is.na(emp), yes=1, no=0)) %>%
   
   #create indicator of reason not at work/hours last week
   mutate(hourslw_i = ifelse(hourslwt<=0 | is.na(hourslwt), yes=0, no=1)) %>% 
   
   #Merge CPI data and inflation adjust wage data
-  left_join(cpi, by=c('year', 'month')) %>% 
+  left_join(monthly_cpi, by=c('year', 'month')) %>% 
   
   #Inflation adjust wage data, and create wage variable for hourly and salaried workers.
-  mutate(realweekpay = weekpay*(cpi_base/cpiurs),
-         realwageotc = wageotc*(cpi_base/cpiurs),
+  mutate(realweekpay = weekpay*(cpi_dec2022/cpi_u_rs),
+         realwageotc = wageotc*(cpi_dec2022/cpi_u_rs),
          
+         #create real weekly pay variable by multiplying usual hours * wageotc
          realwage.c = ifelse(hoursu1i>0, yes=hoursu1i * realwageotc, no = NA),
          
-         #If worker is paid hourly, calculate weekly pay as realwageotc*hoursu1i. 
-         #If not hourly then weekpay== inflation adjusted CPS weekly pay variable.
+         #If worker is paid hourly, assign them the constructed variable realwage.c
+         #If not hourly then weekpay == inflation adjusted CPS weekly pay variable.
          realweekpay.c = ifelse(paidhre==1, yes=realwage.c, no=realweekpay),
          
          #Assign workers with zero hours last week 0 wages
@@ -76,13 +106,11 @@ cps <- load_basic(1994:2022, orgwgt, basicwgt, finalwgt, year, month, minsamp, s
          #Create annual pay variables
          realyearpay.c = ifelse(realweekpay.c>0, realweekpay.c * 52, no=NA),
          
-         #create indicators for positive hours, weekly pay, and wages
          under18 = ifelse(age<18, yes=1, no=0)) %>% 
   set_value_labels(under18 = c('under 18'= 1, 'over 18'=0),
                    month = c('Jan' = 1, 'Feb' = 2, 'Mar' = 3, 'Apr' = 4,
                              'May' = 5, 'Jun' = 6, 'Jul' = 7, 'Aug' = 8,
-                             'Sept' = 9, 'Oct' = 10, 'Nov' = 11, 'Dec' = 12),
-                   emp0 = c('Employed' = 1, 'NILF/unemployed/NIU'=0)) %>% 
+                             'Sept' = 9, 'Oct' = 10, 'Nov' = 11, 'Dec' = 12)) %>% 
   group_by(year, month, hhid, famid) %>% 
   #create group id for each family in sample
   mutate(group_id = cur_group_id()) %>% 
@@ -99,50 +127,56 @@ This chunk splits intensive operations into separate dataframes: cps and cps_fam
 wgt_ratios <- cps %>% 
   select(group_id, famrel, orgwgt, finalwgt) %>% 
   filter(famrel==1) %>% 
-  group_by(group_id) %>% 
   #Calculate ratio of ORG:final weight according to Saenz Sherman 2020.
   mutate(orgfinal_ratio = ifelse(famrel==1, yes=orgwgt/finalwgt, no=NA)) %>% 
   select(group_id, orgfinal_ratio)
 
-cps <- cps %>%
-  #merge org-to-final weight ratios to cps dataset by group_id
-  left_join(wgt_ratios, by='group_id') %>% 
-  relocate(famrel, age, finalwgt, orgwgt, .after=orgfinal_ratio) %>% 
-  #Create a new weight for those under 16yo according to Saenz, Sherman 2020.
-  mutate(adj_wgt = ifelse(age<16, yes=orgfinal_ratio*finalwgt, no=orgwgt))
-
 
 #This groups people into families
 cps_families <- cps %>% 
-  #Only keep non elderly families
-  filter(age<65) %>% 
-#Create new data frame to measure total family income, excluding self-employed, self-incorporated families
-  group_by(group_id) %>%
-    #This section removes families where all working adults are self-employed
-  mutate(selfemp_pop = sum(selfany==1), #count self employed in each family
-         emp_pop = sum(emp0==1, na.rm=TRUE)) %>%
-  #remove families where all workers are self-employed
-  filter(!(emp_pop<=selfemp_pop & emp_pop!=0)) %>% 
+  
+  #merge org-to-final weight ratios to cps dataset by group_id
+  left_join(wgt_ratios, by='group_id') %>% 
+  relocate(famrel, age, finalwgt, orgwgt, .after=orgfinal_ratio) %>% 
+  
+  #Create a new weight for those under 16yo according to Saenz, Sherman 2020.
+  mutate(adj_wgt = ifelse(age<16, yes=orgfinal_ratio*finalwgt, no=orgwgt)) %>% 
+  
+  #Drop all families w/one member 65+
+  mutate(has_elderly = any(age>=65), .by=group_id) %>%
+  filter(has_elderly==FALSE) %>% 
+  
+  #Count size of families and number of children present
+  mutate(famsize = n(),
+         child_under18 = sum(famrel==3 & age<18), .by=group_id) %>% 
+  
+  #Join 2022 poverty threshold
+  left_join(clean_thresh, by=c('famsize', 'child_under18')) %>% 
+
   #poverty thresholds count children in family under 18
   mutate(famsize = n(),
-         child_under18 = sum(famrel==3 & age<18)) %>% 
-  #count family's real annual pay
-  mutate(rtotweekpay = sum(realweekpay.c, na.rm=TRUE),
-         rtotyearpay = sum(realweekpay.c*52, na.rm=TRUE)) %>% 
-  ungroup() %>% 
+         child_under18 = sum(famrel==3 & age<18),
+         #count family's real annual pay
+         rtotweekpay = sum(realweekpay.c, na.rm=TRUE),
+         rtotyearpay = sum(realweekpay.c*52, na.rm=TRUE),
+         .by=group_id) %>% 
 
   #Merge poverty thresholds from census
-  left_join(historic_thresh) %>% 
-  mutate(weekly_pov_thresh_22 = (pov_thresh_2022/52)) %>%
-  #create unemp variable
-  mutate(unemp = ifelse(lfstat==2, yes=1, no=0)) %>%
-  set_value_labels(unemp = c('Unemployed'=1, 'Employed/NILF'=0)) %>% 
-  mutate(inpoverty = ifelse((rtotweekpay<weekly_pov_thresh_22), yes=1, no=0), #Create an indicator for folks in poverty
-         povlevel = round((rtotyearpay/pov_thresh_2022)*100)) %>% #create poverty measure
-  mutate(noincome = ifelse(rtotweekpay==0, yes=1, no=0)) %>% #count folks w/no income
+  mutate(weekly_threshold2022 = (threshold2022/52)) %>%
+  
+  # Here I calculate how many families are in poverty by comparing their weekly
+  # earnings with the 2022 "weekly-ized" poverty thresholds :p
+ 
+   #Creates indicator for individuals in pov, and measure ranging from 0-4029% of poverty level
+  mutate(inpoverty = ifelse((rtotweekpay<weekly_threshold2022), yes=1, no=0), 
+         povlevel = round((rtotyearpay/threshold2022)*100)) %>% 
+  #count individuals w/no income
+  mutate(noincome = ifelse(rtotweekpay==0, yes=1, no=0)) %>% 
   set_value_labels(noincome = c('No income'= 1, 'With income'= 0)) %>% 
+    
   #remove 1152 observations in sample that have no ORG weight
   filter(!is.na(adj_wgt)) %>% 
+    
   #write workbook so I can play with data later!
   relocate(group_id, faminc, .after = rtotyearpay) %>% 
   write_csv(here('input/poverty_rate_data.csv'))
@@ -161,13 +195,13 @@ natl_poverty_monthly <- cps_families %>%
          poverty_earnings='All',
          date= as.Date(paste(year, month, 1, sep = "-"), "%Y-%m-%d"))
     
-hist_poverty <- ggplot(aes(x=date, y=poverty), data=natl_poverty)+
+hist_poverty <- ggplot(aes(x=date, y=poverty), data=natl_poverty_monthly)+
   theme_light()+
   theme(plot.title = element_text(size=16, face="bold.italic"))+
   labs(title = 'Historical market based poverty rate', y="Poverty rate", x="Date")+
   geom_line(size=1)
 
-hist_urate <-  ggplot(aes(x=date, y=urate), data=natl_poverty)+
+hist_urate <-  ggplot(aes(x=date, y=urate), data=natl_poverty_monthly)+
   theme_light()+
   theme(plot.title = element_text(size=16, face="bold.italic"))+
   labs(title = 'Historical unemployment 16-64', y="Unemp. rate", x="Date")+
