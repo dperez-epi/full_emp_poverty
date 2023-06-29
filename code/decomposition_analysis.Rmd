@@ -16,14 +16,14 @@ library(openxlsx)
 library(MetricsWeighted)
 library(gtools)
 library(statar)
+library(realtalk)
 ```
 
 
 ```{r Load CPS}
 #Load CPI data
-cpi <- read_csv(here("input/cpi_annual.csv")) %>% 
-  select(year,cpiurs)
-cpi_base <- cpi$cpiurs[cpi$year == 2019] 
+cpi <- cpi_u_rs_annual
+cpi_2019 <- annual_cpi$cpi_u_rs[annual_cpi$year=='2019']
 
 
 #Create CPS data frame. 
@@ -38,7 +38,7 @@ cps <- load_org(1994:2019, year, month, orgwgt, age, emp, lfstat, selfemp, selfi
   #Merge CPI-U-RS data and inflation adjust wages to 2019$
   left_join(cpi, by='year') %>% 
   mutate(hours = hoursu1i) %>% 
-  mutate(realwage = wage*(cpi_base/cpiurs),
+  mutate(realwage = wage*(cpi_2019/cpi_u_rs),
          #Construct our weekly pay variable, realweekpay_c
          # Note: if hours are positive, then multiply hours x realwage. Otherwise assign realweekpay_c == NA
          realweekpay_c = ifelse(hours>0, yes=hours * realwage, NA)) %>% 

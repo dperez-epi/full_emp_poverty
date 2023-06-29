@@ -8,51 +8,76 @@ unemp_data <- load_basic(1994:2022, orgwgt, basicwgt, year, month, minsamp, self
          emp0 = ifelse(emp==1 & !is.na(emp), yes=1, no=0))
 
 
-#Overall unemployment
+#Overall unemployment, annual, not seasonally adjusted
 overall_urate <- unemp_data %>% 
   filter(age>=16, lfstat %in% c(1,2), selfemp0==0, selfinc0==0) %>% 
-  group_by(year) %>% 
-  summarize(urate_16plus = weighted.mean(unemp, w=basicwgt/12, na.rm=TRUE))
+  summarize(urate_16plus = weighted.mean(unemp, w=basicwgt/12, na.rm=TRUE), .by = year)
 
 
-#Load poverty data csv ()
+#Load poverty data csv(). This is just the cps_families dataframe.
 poverty_data <- fread(here('input/poverty_rate_data.csv'), na.strings = "NA")
 
 
-poverty_16to64 <- cps_families %>% 
-  group_by(year) %>% 
-  summarise(poverty_16to64 = weighted.mean(inpoverty, w=adj_wgt, na.rm=TRUE)) %>% 
+#annual poverty data
+povrates_0to64 <- cps_families %>% 
+  summarise(poverty_0to64 = weighted.mean(inpoverty, w=adj_wgt/12, na.rm=TRUE), .by=year) %>% 
+  left_join(overall_urate)
+
+
+povlevels_0to64 <- cps_families %>% 
+  summarize(povlevel_0to64 = sum(inpoverty * adj_wgt/12, na.rm = TRUE), .by=year) %>% 
   left_join(overall_urate)
 
 
 urate_wbhao <- unemp_data %>% 
   filter(age>=16, lfstat %in% c(1,2), selfemp0==0, selfinc0==0) %>% 
-  group_by(year, wbhao) %>% 
-  summarize(urate_16plus_wbhao = weighted.mean(unemp, w=basicwgt/12, na.rm=TRUE))
+  summarize(urate_16plus_wbhao = weighted.mean(unemp, w=basicwgt/12, na.rm=TRUE), .by = c(year,wbhao))
 
 
-poverty_wbhao_16to64 <- cps_families %>% 
-  group_by(year, wbhao) %>% 
+povrates_0to64_wbhao <- cps_families %>% 
   mutate(wbhao = to_factor(wbhao)) %>% 
-  summarise(pov_16to64_wbhao = weighted.mean(inpoverty, w=adj_wgt, na.rm=TRUE)) %>% 
-  pivot_wider(id_cols = year, names_from = wbhao, values_from = pov_16to64_wbhao) %>% 
+  summarise(povrate_0to64 = weighted.mean(inpoverty, w=adj_wgt, na.rm=TRUE), .by=c(year, wbhao)) %>% 
+  pivot_wider(id_cols = year, names_from = wbhao, values_from = c(povrate_0to64)) %>% 
+  left_join(overall_urate)
+
+povlevels_0to64_wbhao <- cps_families %>% 
+  mutate(wbhao = to_factor(wbhao)) %>% 
+  summarise(povlevel_0to64 = sum(inpoverty * adj_wgt/12, na.rm=TRUE), .by=c(year, wbhao)) %>% 
+  pivot_wider(id_cols = year, names_from = wbhao, values_from = c(povlevel_0to64)) %>% 
   left_join(overall_urate)
 
 
 pov_data <- createWorkbook()
 
-addWorksheet(pov_data, sheetName = "Overall")
-addWorksheet(pov_data, sheetName = "Wbhao")
+addWorksheet(pov_data, sheetName = "Pov. rates overall")
+addWorksheet(pov_data, sheetName = "Pov. rates wbhao")
+addWorksheet(pov_data, sheetName = "Pov. levels overall")
+addWorksheet(pov_data, sheetName = "Pov. levels wbhao")
 
 pct = createStyle(numFmt = '0.0%')
-acct = createStyle(numFmt = '#.0' )
+acct = createStyle(numFmt = '#,0' )
 hs1 <- createStyle(fgFill = "#4F81BD", halign = "CENTER", textDecoration = "Bold",
                    border = "Bottom", fontColour = "white")
 
-writeData(pov_data, headerStyle = hs1, poverty_16to64, sheet = "Overall",
+writeData(pov_data, headerStyle = hs1, povrates_0to64, sheet = "Pov. rates overall",
           startCol = 1, startRow = 1, colNames = TRUE)
-writeData(pov_data, poverty_wbhao_16to64, headerStyle = hs1, sheet = "Wbhao",
+writeData(pov_data, povrates_0to64_wbhao, headerStyle = hs1, sheet = "Pov. rates wbhao",
+          startCol = 1, startRow = 1, colNames = TRUE)
+writeData(pov_data, headerStyle = hs1, povlevels_0to64, sheet = "Pov. levels overall",
+          startCol = 1, startRow = 1, colNames = TRUE)
+writeData(pov_data, povlevels_0to64_wbhao, headerStyle = hs1, sheet = "Pov. levels wbhao",
           startCol = 1, startRow = 1, colNames = TRUE)
 
 
-saveWorkbook(pov_data, here("output/poverty_workbook_2.0.xlsx"), overwrite = TRUE)
+#add percent format
+addStyle(pov_data, "Pov. rates overall", style=pct, cols=c(2:3), rows=2:(nrow(povrates_0to64)+1), gridExpand=TRUE)
+addStyle(pov_data, "Pov. rates wbhao", style=pct, cols=c(2:7), rows=2:(nrow(povrates_0to64_wbhao)+1), gridExpand=TRUE)
+addStyle(pov_data, "Pov. levels overall", style=pct, cols=c(3), rows=2:(nrow(povlevels_0to64)+1), gridExpand=TRUE)
+addStyle(pov_data, "Pov. levels wbhao", style=pct, cols=c(7), rows=2:(nrow(povlevels_0to64_wbhao)+1), gridExpand=TRUE)
+
+#add accounting format
+addStyle(pov_data, "Pov. levels overall", style=acct, cols=c(2), rows=2:(nrow(povlevels_0to64)+1), gridExpand=TRUE)
+addStyle(pov_data, "Pov. levels wbhao", style=acct, cols=c(2:6), rows=2:(nrow(povlevels_0to64_wbhao)+1), gridExpand=TRUE)
+
+
+saveWorkbook(pov_data, here("output/06-23-2023 pov. levels and rates.xlsx"), overwrite = TRUE)

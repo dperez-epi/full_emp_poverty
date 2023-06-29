@@ -8,9 +8,7 @@ output: html_document
 
 ```{r Load poverty thresholds and CPI}
 
-#Below I load both annual and monthly CPI, as I want to adjust the 2020 annual
-#poverty thresholds from $2020 CPI-U into monthly poverty thresholds.
-
+#load both annual and monthly CPI
 
 annual_cpi <- cpi_u_rs_annual
 cpi_2022 <- annual_cpi$cpi_u_rs[annual_cpi$year=='2022']
@@ -77,11 +75,17 @@ clean_thresh <- raw_threshold %>%
 #load CPS Basic data, but then restrict to minsamp 4 & 8 (ORG months only)
 cps <- load_basic(1994:2022, orgwgt, basicwgt, finalwgt, year, month, minsamp, selfemp,
                   selfinc, personid, hhid, hhtype, famtype, famid, famrel, ownchild,
-                  agechild, paidhre, wage, wageotc, weekpay, faminc, hourslwt, hourslw1, hoursu1i,
+                  agechild, paidhre, emp, wage, wageotc, weekpay, faminc, hourslwt, hourslw1, hoursu1i,
                   emphrs, unemp, lfstat, age, wbhao, wbho_only, faminc) %>% 
   
   #keep only those interviewed in the ORG
   filter(minsamp %in% c(4,8)) %>%
+  
+  #Create indicators for self-employed/incorporated workers
+  mutate(selfemp0 = ifelse(selfemp==1 & !is.na(selfemp), yes=1, no=0),
+         selfinc0 = ifelse(selfinc==1 & !is.na(selfinc), yes=1, no=0),
+         selfany = ifelse(selfinc0==1 | selfemp0==1, yes=1, no=0),
+         emp0 = ifelse(emp==1 & !is.na(emp), yes=1, no=0)) %>%
   
   #create indicator of reason not at work/hours last week
   mutate(hourslw_i = ifelse(hourslwt<=0 | is.na(hourslwt), yes=0, no=1)) %>% 
@@ -142,6 +146,13 @@ cps_families <- cps %>%
   #Create a new weight for those under 16yo according to Saenz, Sherman 2020.
   mutate(adj_wgt = ifelse(age<16, yes=orgfinal_ratio*finalwgt, no=orgwgt)) %>% 
   
+  #Count self employed in each family
+  mutate(selfemp_pop = sum(selfany==1),
+         emp_pop = sum(emp0==1, na.rm=TRUE), .by=group_id) %>%
+  
+  #remove families where all workers are self-employed
+  filter(!(emp_pop<=selfemp_pop & emp_pop!=0)) %>% 
+  
   #Drop all families w/one member 65+
   mutate(has_elderly = any(age>=65), .by=group_id) %>%
   filter(has_elderly==FALSE) %>% 
@@ -184,49 +195,49 @@ cps_families <- cps %>%
 ```
 
 ```{r Time series of monthly poverty data}
-
-natl_poverty_monthly <- cps_families %>% 
-  group_by(year, month) %>% 
-  summarize(n = n(),
-            in_poverty = sum(inpoverty * (adj_wgt/12), na.rm=TRUE),
-            poverty = weighted.mean(inpoverty, w=adj_wgt, na.rm=TRUE),
-            urate16_64 = weighted.mean(unemp, w=adj_wgt, na.rm=TRUE)) %>%
-  mutate(group='Poverty, all',
-         poverty_earnings='All',
-         date= as.Date(paste(year, month, 1, sep = "-"), "%Y-%m-%d"))
-    
-hist_poverty <- ggplot(aes(x=date, y=poverty), data=natl_poverty_monthly)+
-  theme_light()+
-  theme(plot.title = element_text(size=16, face="bold.italic"))+
-  labs(title = 'Historical market based poverty rate', y="Poverty rate", x="Date")+
-  geom_line(size=1)
-
-hist_urate <-  ggplot(aes(x=date, y=urate), data=natl_poverty_monthly)+
-  theme_light()+
-  theme(plot.title = element_text(size=16, face="bold.italic"))+
-  labs(title = 'Historical unemployment 16-64', y="Unemp. rate", x="Date")+
-  geom_line(size=1)
-
-
-annual_natl_poverty <- cps_families %>% 
-  group_by(year) %>% 
-  summarize(n = n(),
-            in_poverty = sum(inpoverty * (adj_wgt/12), na.rm=TRUE),
-            poverty = weighted.mean(inpoverty, w=adj_wgt/12, na.rm=TRUE),
-            urate = weighted.mean(unemp, w=adj_wgt/12, na.rm=TRUE)) %>%
-  mutate(group='Poverty, all',
-         poverty_earnings='All')
-
-annual_hist_poverty <- ggplot(aes(x=year, y=poverty), data=annual_natl_poverty)+
-  theme_light()+
-  theme(plot.title = element_text(size=16, face="bold.italic"))+
-  labs(title = 'Historical market based poverty rate', y="Poverty rate", x="Date")+
-  geom_line(size=1)
-
-hist_poverty + hist_urate
-
-#save photo to output
-ggsave(here(paste0('output/stateplots/',plotstates[i],'.png')), plot = last_plot(), dpi=300, width = 9, height = 5)
+# 
+# natl_poverty_monthly <- cps_families %>% 
+#   group_by(year, month) %>% 
+#   summarize(n = n(),
+#             in_poverty = sum(inpoverty * (adj_wgt/12), na.rm=TRUE),
+#             poverty = weighted.mean(inpoverty, w=adj_wgt, na.rm=TRUE),
+#             urate16_64 = weighted.mean(unemp, w=adj_wgt, na.rm=TRUE)) %>%
+#   mutate(group='Poverty, all',
+#          poverty_earnings='All',
+#          date= as.Date(paste(year, month, 1, sep = "-"), "%Y-%m-%d"))
+#     
+# hist_poverty <- ggplot(aes(x=date, y=poverty), data=natl_poverty_monthly)+
+#   theme_light()+
+#   theme(plot.title = element_text(size=16, face="bold.italic"))+
+#   labs(title = 'Historical market based poverty rate', y="Poverty rate", x="Date")+
+#   geom_line(size=1)
+# 
+# hist_urate <-  ggplot(aes(x=date, y=urate), data=natl_poverty_monthly)+
+#   theme_light()+
+#   theme(plot.title = element_text(size=16, face="bold.italic"))+
+#   labs(title = 'Historical unemployment 16-64', y="Unemp. rate", x="Date")+
+#   geom_line(size=1)
+# 
+# 
+# annual_natl_poverty <- cps_families %>% 
+#   group_by(year) %>% 
+#   summarize(n = n(),
+#             in_poverty = sum(inpoverty * (adj_wgt/12), na.rm=TRUE),
+#             poverty = weighted.mean(inpoverty, w=adj_wgt/12, na.rm=TRUE),
+#             urate = weighted.mean(unemp, w=adj_wgt/12, na.rm=TRUE)) %>%
+#   mutate(group='Poverty, all',
+#          poverty_earnings='All')
+# 
+# annual_hist_poverty <- ggplot(aes(x=year, y=poverty), data=annual_natl_poverty)+
+#   theme_light()+
+#   theme(plot.title = element_text(size=16, face="bold.italic"))+
+#   labs(title = 'Historical market based poverty rate', y="Poverty rate", x="Date")+
+#   geom_line(size=1)
+# 
+# hist_poverty + hist_urate
+# 
+# #save photo to output
+# ggsave(here(paste0('output/stateplots/',plotstates[i],'.png')), plot = last_plot(), dpi=300, width = 9, height = 5)
 
 
 ```
